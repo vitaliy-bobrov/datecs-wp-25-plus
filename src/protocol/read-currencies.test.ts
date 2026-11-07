@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { bccMatches, sumFromStxToEnq } from './preflight';
-import { FOREIGN_READ_FRAMES, parseReadResponse, READ_LOCAL_FRAMES } from './read-currencies';
+import {
+  CONVERTER_READ_FRAMES,
+  FOREIGN_READ_FRAMES,
+  parseReadResponse,
+  READ_LOCAL_FRAMES,
+} from './read-currencies';
 
 const response = (hex: string) =>
   Uint8Array.from((hex.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16)));
@@ -77,6 +82,26 @@ describe('foreign read probe', () => {
     );
     expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[5]?.bytes)).toContain(
       'ForeignCurrChangeAfterZ',
+    );
+  });
+});
+
+describe('converter read', () => {
+  it('builds three fixed Type2 queries without 0xFF', () => {
+    expect(CONVERTER_READ_FRAMES).toHaveLength(3);
+    expect(CONVERTER_READ_FRAMES.map((frame) => frame.label)).toEqual([
+      'converterName',
+      'converterRate',
+      'converterPrint',
+    ]);
+    for (const { bytes: frame } of CONVERTER_READ_FRAMES) {
+      expect(frame.includes(0xff)).toBe(false);
+      const enq = frame.length - 6;
+      expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
+    }
+    expect(new TextDecoder().decode(CONVERTER_READ_FRAMES[0]?.bytes)).toContain('NameConvertCurr');
+    expect(new TextDecoder().decode(CONVERTER_READ_FRAMES[1]?.bytes)).toContain(
+      'ExchangeRateConvetCurr',
     );
   });
 });

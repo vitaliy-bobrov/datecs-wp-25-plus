@@ -98,6 +98,22 @@ export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [
   { label: 'slot1ChangeAfterZ', bytes: buildReadQuery('ForeignCurrChangeAfterZ\t1\t\t', 0x2e) },
 ];
 
+type ConverterReadFrameLabel = 'converterName' | 'converterRate' | 'converterPrint';
+
+export interface ConverterReadFrame {
+  label: ConverterReadFrameLabel;
+  bytes: Uint8Array;
+}
+
+export const CONVERTER_READ_FRAMES: ConverterReadFrame[] = [
+  { label: 'converterName', bytes: buildReadQuery('NameConvertCurr\t\t\t', 0x2f) },
+  {
+    label: 'converterRate',
+    bytes: buildReadQuery('ExchangeRateConvetCurr\t\t\t', 0x30),
+  },
+  { label: 'converterPrint', bytes: buildReadQuery('PrintConvetCurr\t\t\t', 0x31) },
+];
+
 export function parseReadResponse(input: Uint8Array): ReadResponse | null {
   let offset = 0;
   while (input[offset] === 0x16) offset += 1;

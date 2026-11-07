@@ -400,6 +400,45 @@ export function App({ session }: AppProps) {
               </dl>
             ) : null}
           </div>
+
+          <div className="foreign-probe">
+            <div className="card-heading">
+              <div>
+                <h4>Converter record</h4>
+                <p className="muted">
+                  Reads converter name, four-decimal rate and Print-converter flag. No{' '}
+                  <code>0xFF</code>, no write. Experimental until confirmed on hardware.
+                </p>
+              </div>
+              <span className={`state state-${stateClass(snapshot.converterReadState)}`}>
+                {stateLabel(snapshot.converterReadState)}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="button"
+              onClick={() => void session.runReadConverter()}
+              disabled={!snapshot.foreignRead || snapshot.converterReadState === 'reading'}
+            >
+              {snapshot.converterReadState === 'reading' ? 'Reading…' : 'Read converter'}
+            </button>
+            {snapshot.converterRead ? (
+              <dl className="read-values">
+                <div>
+                  <dt>Name</dt>
+                  <dd>{snapshot.converterRead.name ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Rate</dt>
+                  <dd>{formatRate(snapshot.converterRead.rate)}</dd>
+                </div>
+                <div>
+                  <dt>Print converter</dt>
+                  <dd>{yesNo(snapshot.converterRead.printFlag)}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
         </div>
       </section>
 

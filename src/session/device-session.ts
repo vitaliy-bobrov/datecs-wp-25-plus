@@ -12,7 +12,9 @@ import {
   toTransportError,
 } from '../ports/transport';
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
+import type { ReadResponse } from '../protocol/read-currencies';
 import {
+  CONVERTER_READ_FRAMES,
   FOREIGN_READ_FRAMES,
   parseReadResponse,
   READ_LOCAL_FRAMES,
@@ -53,6 +55,15 @@ interface LocalReadResult {
 
 type ForeignReadState = 'idle' | 'reading' | 'read' | 'failed';
 
+type ConverterReadState = 'idle' | 'reading' | 'read' | 'failed';
+
+interface ConverterReadResult {
+  name?: string;
+  rate?: string;
+  printFlag?: string;
+  rawFrames?: string[];
+}
+
 interface ForeignReadResult {
   slot0Name?: string;
   slot0Rate?: string;
@@ -74,9 +85,11 @@ export interface SessionSnapshot {
   captureState: CaptureState;
   readState: ReadState;
   foreignReadState: ForeignReadState;
+  converterReadState: ConverterReadState;
   preflight?: PreflightResult;
   localRead?: LocalReadResult;
   foreignRead?: ForeignReadResult;
+  converterRead?: ConverterReadResult;
   capture: readonly CaptureEntry[];
 }
 
@@ -116,6 +129,7 @@ export class DeviceSession {
     captureState: 'idle',
     readState: 'idle',
     foreignReadState: 'idle',
+    converterReadState: 'idle',
     capture: [],
   };
 
@@ -175,9 +189,11 @@ export class DeviceSession {
       captureState: 'idle',
       readState: 'idle',
       foreignReadState: 'idle',
+      converterReadState: 'idle',
       preflight: undefined,
       localRead: undefined,
       foreignRead: undefined,
+      converterRead: undefined,
       error: undefined,
     });
     this.append({
@@ -261,9 +277,11 @@ export class DeviceSession {
       captureState: 'idle',
       readState: 'idle',
       foreignReadState: 'idle',
+      converterReadState: 'idle',
       preflight: undefined,
       localRead: undefined,
       foreignRead: undefined,
+      converterRead: undefined,
     });
   }
 
@@ -478,104 +496,52 @@ export class DeviceSession {
     this.set({
       readState: 'reading',
       foreignReadState: 'idle',
+      converterReadState: 'idle',
       localRead: undefined,
       foreignRead: undefined,
+      converterRead: undefined,
     });
 
+    const results = await this.readFrameSequence(
+      READ_LOCAL_FRAMES,
+      transport,
+      transportKind,
+      generation,
+      'Read local',
+      'local-read',
+    );
+    if (!this.isCurrentPreflight(transport, generation)) return;
+    if (!results) {
+      this.set({ readState: 'failed' });
+      return;
+    }
+
     const local: LocalReadResult = { rawFrames: [] };
-
-    for (const frame of READ_LOCAL_FRAMES) {
-      if (!this.isCurrentPreflight(transport, generation)) return;
-
-      try {
-        await transport.write(frame.bytes);
-      } catch (error) {
-        this.failRead(
-          'preflight.read.write',
-          toTransportError(error, 'local-read.write'),
-          environment,
-        );
-        return;
-      }
-
-      this.append({
-        kind: 'tx',
-        direction: 'tx',
-        transport: transportKind,
-        bytes: frame.bytes,
-        message: `Read local: ${frame.label}`,
-      });
-
-      let raw: Uint8Array;
-      try {
-        raw = await this.readLocalResponse(transport, transportKind, generation);
-      } catch (error) {
-        if (!this.isCurrentPreflight(transport, generation)) return;
-        this.failRead(
-          'preflight.read.read',
-          toTransportError(error, 'local-read.read'),
-          environment,
-        );
-        return;
-      }
-      if (!this.isCurrentPreflight(transport, generation)) return;
-
-      if (raw.length === 0) {
-        this.failRead(
-          'preflight.read.timeout',
-          new TransportError('timeout', 'No local currency response within 500 ms.', {
-            operation: 'local-read.read',
-            stage: 'timeout',
-          }),
-          environment,
-        );
-        return;
-      }
-
-      const parsed = parseReadResponse(raw);
-      if (!parsed) {
-        this.failRead(
-          'preflight.read.parse',
-          new TransportError(
-            'device-unavailable',
-            'The local currency response was not a valid Type2 frame.',
-            {
-              operation: 'local-read.read',
-              stage: 'parse',
-              errorMessage: toHex(raw),
-            },
-          ),
-          environment,
-        );
-        return;
-      }
+    for (const { label, parsed } of results) {
       local.rawFrames?.push(parsed.rawHex);
-
       const value = parsed.fields[0];
-      if (value !== undefined) {
-        switch (frame.label) {
-          case 'barcode':
-            local.barcode = value;
-            break;
-          case 'localName':
-            local.localName = value;
-            break;
-          case 'currencyDate':
-            local.currencyDate = value;
-            break;
-          case 'pgmLocalName':
-            local.pgmLocalName = value;
-            break;
-          case 'pgmCurrencyDate':
-            local.pgmCurrencyDate = value;
-            break;
-          default:
-            break;
-        }
+      if (value === undefined) continue;
+      switch (label) {
+        case 'barcode':
+          local.barcode = value;
+          break;
+        case 'localName':
+          local.localName = value;
+          break;
+        case 'currencyDate':
+          local.currencyDate = value;
+          break;
+        case 'pgmLocalName':
+          local.pgmLocalName = value;
+          break;
+        case 'pgmCurrencyDate':
+          local.pgmCurrencyDate = value;
+          break;
+        default:
+          break;
       }
     }
 
-    if (!this.isCurrentPreflight(transport, generation)) return;
     this.append({
       kind: 'info',
       transport: transportKind,
@@ -583,6 +549,236 @@ export class DeviceSession {
       detail: { ...local, ...environment } as Record<string, unknown>,
     });
     this.set({ readState: 'read', localRead: local });
+  }
+
+  async runReadForeign(): Promise<void> {
+    const transport = this.transport;
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.transportKind !== 'webserial' ||
+      this.snapshot.readState !== 'read' ||
+      this.snapshot.foreignReadState === 'reading'
+    ) {
+      return;
+    }
+
+    const generation = this.preflightGeneration;
+    const transportKind = this.snapshot.transportKind;
+    const environment = environmentDetail();
+    this.set({
+      foreignReadState: 'reading',
+      converterReadState: 'idle',
+      foreignRead: undefined,
+      converterRead: undefined,
+    });
+
+    const results = await this.readFrameSequence(
+      FOREIGN_READ_FRAMES,
+      transport,
+      transportKind,
+      generation,
+      'Read foreign',
+      'foreign-read',
+    );
+    if (!this.isCurrentPreflight(transport, generation)) return;
+    if (!results) {
+      this.set({ foreignReadState: 'failed' });
+      return;
+    }
+
+    const foreign: ForeignReadResult = { rawFrames: [] };
+    for (const { label, parsed } of results) {
+      foreign.rawFrames?.push(parsed.rawHex);
+      const value = parsed.fields[0];
+      if (value === undefined) continue;
+      switch (label) {
+        case 'slot0Name':
+          foreign.slot0Name = value;
+          break;
+        case 'slot0Rate':
+          foreign.slot0Rate = value;
+          break;
+        case 'slot1Name':
+          foreign.slot1Name = value;
+          break;
+        case 'slot1Rate':
+          foreign.slot1Rate = value;
+          break;
+        case 'slot0FullName':
+          foreign.slot0FullName = value;
+          break;
+        case 'slot0ChangeAfterZ':
+          foreign.slot0ChangeAfterZ = value;
+          break;
+        case 'slot1FullName':
+          foreign.slot1FullName = value;
+          break;
+        case 'slot1ChangeAfterZ':
+          foreign.slot1ChangeAfterZ = value;
+          break;
+        default:
+          break;
+      }
+    }
+
+    this.append({
+      kind: 'info',
+      transport: transportKind,
+      message: 'Foreign slot values read',
+      detail: { ...foreign, ...environment } as Record<string, unknown>,
+    });
+    this.set({ foreignReadState: 'read', foreignRead: foreign });
+  }
+
+  async runReadConverter(): Promise<void> {
+    const transport = this.transport;
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.transportKind !== 'webserial' ||
+      this.snapshot.foreignReadState !== 'read' ||
+      this.snapshot.converterReadState === 'reading'
+    ) {
+      return;
+    }
+
+    const generation = this.preflightGeneration;
+    const transportKind = this.snapshot.transportKind;
+    const environment = environmentDetail();
+    this.set({ converterReadState: 'reading', converterRead: undefined });
+
+    const results = await this.readFrameSequence(
+      CONVERTER_READ_FRAMES,
+      transport,
+      transportKind,
+      generation,
+      'Read converter',
+      'converter-read',
+    );
+    if (!this.isCurrentPreflight(transport, generation)) return;
+    if (!results) {
+      this.set({ converterReadState: 'failed' });
+      return;
+    }
+
+    const converter: ConverterReadResult = { rawFrames: [] };
+    for (const { label, parsed } of results) {
+      converter.rawFrames?.push(parsed.rawHex);
+      const value = parsed.fields[0];
+      if (value === undefined) continue;
+      switch (label) {
+        case 'converterName':
+          converter.name = value;
+          break;
+        case 'converterRate':
+          converter.rate = value;
+          break;
+        case 'converterPrint':
+          converter.printFlag = value;
+          break;
+        default:
+          break;
+      }
+    }
+
+    this.append({
+      kind: 'info',
+      transport: transportKind,
+      message: 'Converter values read',
+      detail: { ...converter, ...environment } as Record<string, unknown>,
+    });
+    this.set({ converterReadState: 'read', converterRead: converter });
+  }
+
+  private async readFrameSequence(
+    frames: readonly { label: string; bytes: Uint8Array }[],
+    transport: DeviceTransport,
+    transportKind: TransportKind,
+    generation: number,
+    messagePrefix: string,
+    operation: string,
+  ): Promise<Array<{ label: string; parsed: ReadResponse }> | null> {
+    const results: Array<{ label: string; parsed: ReadResponse }> = [];
+    for (const frame of frames) {
+      if (!this.isCurrentPreflight(transport, generation)) return null;
+
+      try {
+        await transport.write(frame.bytes);
+      } catch (error) {
+        const transportError = toTransportError(error, `${operation}.write`);
+        this.append({
+          kind: 'error',
+          code: transportError.code,
+          message: PUBLIC_ERROR[transportError.code],
+          stage: transportError.detail?.stage,
+          detail: {
+            ...environmentDetail(),
+            ...transportError.detail,
+          } as Record<string, unknown>,
+        });
+        return null;
+      }
+
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes: frame.bytes,
+        message: `${messagePrefix}: ${frame.label}`,
+      });
+
+      let raw: Uint8Array;
+      try {
+        raw = await this.readLocalResponse(
+          transport,
+          transportKind,
+          generation,
+          `${messagePrefix} rx`,
+        );
+      } catch (error) {
+        if (!this.isCurrentPreflight(transport, generation)) return null;
+        const transportError = toTransportError(error, `${operation}.read`);
+        this.append({
+          kind: 'error',
+          code: transportError.code,
+          message: PUBLIC_ERROR[transportError.code],
+          stage: transportError.detail?.stage,
+          detail: {
+            ...environmentDetail(),
+            ...transportError.detail,
+          } as Record<string, unknown>,
+        });
+        return null;
+      }
+
+      if (!this.isCurrentPreflight(transport, generation)) return null;
+      if (raw.length === 0) {
+        this.append({
+          kind: 'error',
+          code: 'timeout',
+          message: `No response for ${frame.label} within 500 ms.`,
+          stage: 'timeout',
+          detail: { operation: `${operation}.read`, stage: 'timeout' },
+        });
+        return null;
+      }
+
+      const parsed = parseReadResponse(raw);
+      if (!parsed) {
+        this.append({
+          kind: 'error',
+          code: 'device-unavailable',
+          message: `The ${frame.label} response was not a valid Type2 frame.`,
+          stage: 'parse',
+          errorMessage: toHex(raw),
+        });
+        return null;
+      }
+
+      results.push({ label: frame.label, parsed });
+    }
+    return results;
   }
 
   private async readLocalResponse(
@@ -622,154 +818,6 @@ export class DeviceSession {
     return raw;
   }
 
-  private failRead(
-    _operation: string,
-    error: TransportError,
-    environment: TransportErrorDetail,
-  ): void {
-    this.append({
-      kind: 'error',
-      code: error.code,
-      message: PUBLIC_ERROR[error.code],
-      stage: error.detail?.stage,
-      errorName: error.detail?.errorName,
-      errorMessage: error.detail?.errorMessage,
-      detail: { ...environment, ...error.detail } as Record<string, unknown>,
-    });
-    this.set({ readState: 'failed' });
-  }
-
-  async runReadForeign(): Promise<void> {
-    const transport = this.transport;
-    if (
-      this.snapshot.phase !== 'connected' ||
-      !transport ||
-      this.snapshot.transportKind !== 'webserial' ||
-      this.snapshot.readState !== 'read' ||
-      this.snapshot.foreignReadState === 'reading'
-    ) {
-      return;
-    }
-
-    const generation = this.preflightGeneration;
-    const transportKind = this.snapshot.transportKind;
-    const environment = environmentDetail();
-    const foreign: ForeignReadResult = { rawFrames: [] };
-    this.set({ foreignReadState: 'reading', foreignRead: undefined });
-
-    for (const frame of FOREIGN_READ_FRAMES) {
-      if (!this.isCurrentPreflight(transport, generation)) return;
-
-      try {
-        await transport.write(frame.bytes);
-      } catch (error) {
-        const transportError = toTransportError(error, 'foreign-read.write');
-        this.append({
-          kind: 'error',
-          code: transportError.code,
-          message: PUBLIC_ERROR[transportError.code],
-          stage: transportError.detail?.stage,
-          detail: { ...environment, ...transportError.detail } as Record<string, unknown>,
-        });
-        this.set({ foreignReadState: 'failed' });
-        return;
-      }
-
-      this.append({
-        kind: 'tx',
-        direction: 'tx',
-        transport: transportKind,
-        bytes: frame.bytes,
-        message: `Read foreign: ${frame.label}`,
-      });
-
-      let raw: Uint8Array;
-      try {
-        raw = await this.readLocalResponse(transport, transportKind, generation, 'Read foreign rx');
-      } catch (error) {
-        if (!this.isCurrentPreflight(transport, generation)) return;
-        const transportError = toTransportError(error, 'foreign-read.read');
-        this.append({
-          kind: 'error',
-          code: transportError.code,
-          message: PUBLIC_ERROR[transportError.code],
-          stage: transportError.detail?.stage,
-          detail: { ...environment, ...transportError.detail } as Record<string, unknown>,
-        });
-        this.set({ foreignReadState: 'failed' });
-        return;
-      }
-
-      if (!this.isCurrentPreflight(transport, generation)) return;
-      if (raw.length === 0) {
-        this.append({
-          kind: 'error',
-          code: 'timeout',
-          message: `No response for ${frame.label} within 500 ms.`,
-          stage: 'timeout',
-          detail: { operation: 'foreign-read.read', stage: 'timeout' },
-        });
-        this.set({ foreignReadState: 'failed' });
-        return;
-      }
-
-      const parsed = parseReadResponse(raw);
-      if (!parsed) {
-        this.append({
-          kind: 'error',
-          code: 'device-unavailable',
-          message: `The ${frame.label} response was not a valid Type2 frame.`,
-          stage: 'parse',
-          errorMessage: toHex(raw),
-        });
-        this.set({ foreignReadState: 'failed' });
-        return;
-      }
-
-      foreign.rawFrames?.push(parsed.rawHex);
-      const value = parsed.fields[0];
-      if (value !== undefined) {
-        switch (frame.label) {
-          case 'slot0Name':
-            foreign.slot0Name = value;
-            break;
-          case 'slot0Rate':
-            foreign.slot0Rate = value;
-            break;
-          case 'slot1Name':
-            foreign.slot1Name = value;
-            break;
-          case 'slot1Rate':
-            foreign.slot1Rate = value;
-            break;
-          case 'slot0FullName':
-            foreign.slot0FullName = value;
-            break;
-          case 'slot0ChangeAfterZ':
-            foreign.slot0ChangeAfterZ = value;
-            break;
-          case 'slot1FullName':
-            foreign.slot1FullName = value;
-            break;
-          case 'slot1ChangeAfterZ':
-            foreign.slot1ChangeAfterZ = value;
-            break;
-          default:
-            break;
-        }
-      }
-    }
-
-    if (!this.isCurrentPreflight(transport, generation)) return;
-    this.append({
-      kind: 'info',
-      transport: transportKind,
-      message: 'Foreign slot values read',
-      detail: { ...foreign, ...environment } as Record<string, unknown>,
-    });
-    this.set({ foreignReadState: 'read', foreignRead: foreign });
-  }
-
   clearCapture(): void {
     this.capture.clear();
     this.snapshot = {
@@ -778,9 +826,11 @@ export class DeviceSession {
       captureState: 'idle',
       readState: 'idle',
       foreignReadState: 'idle',
+      converterReadState: 'idle',
       preflight: undefined,
       localRead: undefined,
       foreignRead: undefined,
+      converterRead: undefined,
     };
     this.emit();
   }
