@@ -12,6 +12,7 @@
   --accent: #155e63;
   --accent-ink: #ffffff;
   --danger: #9b2c2c;
+  --success: #2f7d4f;
   --warning: #8a5a00;
   --warning-bg: rgb(183 121 31 / 16%);
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -27,6 +28,7 @@
     --accent: #6fb9b1;
     --accent-ink: #092022;
     --danger: #ff9a9a;
+    --success: #7fd3a0;
   }
 }
 
@@ -553,4 +555,14 @@ h2 {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 18px;
+}
+
+.delta-up {
+  color: var(--success);
+}
+.delta-down {
+  color: var(--danger);
+}
+.delta-flat {
+  color: var(--muted);
 }

@@ -1,5 +1,11 @@
 import type { CurrencyCode } from '../domain/rates';
-import { compareRawRate, formatDifference, formatPercent, formatRateValue } from '../domain/rates';
+import {
+  compareRawRate,
+  differenceTone,
+  formatDifference,
+  formatPercent,
+  formatRateValue,
+} from '../domain/rates';
 import type { NbpState } from './NbpPanel';
 
 interface RateComparisonProps {
@@ -46,7 +52,14 @@ export function RateComparison({ nbp, cashier }: RateComparisonProps) {
                   <th scope="row">{code}</th>
                   <td>{result ? formatRateValue(result.cashier) : 'not read'}</td>
                   <td>{mid ?? 'n/a'}</td>
-                  <td className={result && result.difference !== 0 ? 'delta' : undefined}>
+                  <td
+                    className={[
+                      'delta',
+                      result ? `delta-${differenceTone(result.difference) ?? 'flat'}` : undefined,
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                  >
                     {result
                       ? `${formatDifference(result.difference)} · ${formatPercent(result.percent)}`
                       : '—'}

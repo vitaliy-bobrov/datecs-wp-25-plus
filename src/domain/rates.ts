@@ -39,3 +39,12 @@ export function formatFlag(value: string | undefined): string {
   if (value === '0') return 'No';
   return '—';
 }
+
+export function differenceTone(
+  value: number | null | undefined,
+): 'up' | 'down' | 'flat' | undefined {
+  if (value === null || value === undefined) return undefined;
+  if (value > 0) return 'up';
+  if (value < 0) return 'down';
+  return 'flat';
+}

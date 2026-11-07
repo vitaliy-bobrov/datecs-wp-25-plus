@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { compareRawRate, formatDifference, formatPercent, parseRawRate } from './rates';
+import {
+  compareRawRate,
+  differenceTone,
+  formatDifference,
+  formatPercent,
+  parseRawRate,
+} from './rates';
 
 describe('rate normalization', () => {
   it('scales the four-decimal cashier rate', () => {
@@ -18,5 +24,14 @@ describe('rate normalization', () => {
     expect(eur?.percent).toBeCloseTo(0.068);
     expect(formatDifference(usd?.difference ?? 0)).toBe('-0.0070');
     expect(formatPercent(usd?.percent ?? 0)).toBe('-0.18%');
+  });
+});
+
+describe('difference tone', () => {
+  it('marks positive values up and negative values down', () => {
+    expect(differenceTone(0.01)).toBe('up');
+    expect(differenceTone(-0.01)).toBe('down');
+    expect(differenceTone(0)).toBe('flat');
+    expect(differenceTone(null)).toBeUndefined();
   });
 });

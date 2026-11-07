@@ -1,12 +1,17 @@
 import { useMemo, useState } from 'react';
 import type { CurrencyCode } from '../domain/rates';
-import { formatFlag, formatPercent, formatRateValue } from '../domain/rates';
+import { differenceTone, formatFlag, formatPercent, formatRateValue } from '../domain/rates';
 import {
   buildUpdatePlan,
   type ConverterSnapshot,
   type ForeignRecordSnapshot,
 } from '../domain/update-plan';
 import type { NbpState } from './NbpPanel';
+
+function targetTone(current: number | null, target: number): string {
+  if (current === null) return '';
+  return `delta-${differenceTone(target - current) ?? 'flat'}`;
+}
 
 interface UpdatePreviewProps {
   foreign?: ForeignRecordSnapshot;
@@ -66,12 +71,16 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
               <tr>
                 <th scope="row">USD rate</th>
                 <td>{plan.usd.current === null ? '—' : formatRateValue(plan.usd.current)}</td>
-                <td>{formatRateValue(plan.usd.target)}</td>
+                <td className={targetTone(plan.usd.current, plan.usd.target)}>
+                  {formatRateValue(plan.usd.target)}
+                </td>
               </tr>
               <tr>
                 <th scope="row">EUR rate</th>
                 <td>{plan.eur.current === null ? '—' : formatRateValue(plan.eur.current)}</td>
-                <td>{formatRateValue(plan.eur.target)}</td>
+                <td className={targetTone(plan.eur.current, plan.eur.target)}>
+                  {formatRateValue(plan.eur.target)}
+                </td>
               </tr>
               {plan.converter ? (
                 <tr>
@@ -81,7 +90,9 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
                       ? '—'
                       : formatRateValue(plan.converter.current)}
                   </td>
-                  <td>{formatRateValue(plan.converter.target)}</td>
+                  <td className={targetTone(plan.converter.current, plan.converter.target)}>
+                    {formatRateValue(plan.converter.target)}
+                  </td>
                 </tr>
               ) : null}
               <tr>
