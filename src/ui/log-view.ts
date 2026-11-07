@@ -22,6 +22,7 @@ export function stateLabel(value: string): string {
     reading: 'Reading',
     read: 'Read',
     writing: 'Writing',
+    updating: 'Updating',
     verified: 'Verified',
   };
   return labels[value] ?? value;

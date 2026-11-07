@@ -13,8 +13,8 @@ interface NbpPanelProps {
 
 export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
   return (
-    <section className="card nbp" aria-labelledby="nbp-heading">
-      <div className="card-heading">
+    <section className="card panel nbp" aria-labelledby="nbp-heading">
+      <div className="card-heading panel-head">
         <div>
           <h2 id="nbp-heading">NBP reference</h2>
           <p className="muted">Table A · USD/EUR · previous business day · in-memory only</p>
@@ -41,14 +41,16 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
           Loading NBP table A…
         </p>
       ) : state.status === 'error' ? (
-        <div className="nbp-error" role="alert">
-          <p>{state.message || errorMessage(null)}</p>
-          <button type="button" className="button" onClick={onRefresh}>
-            Retry
-          </button>
+        <div className="panel-body">
+          <div className="nbp-error" role="alert">
+            <p>{state.message || errorMessage(null)}</p>
+            <button type="button" className="button" onClick={onRefresh}>
+              Retry
+            </button>
+          </div>
         </div>
       ) : (
-        <div aria-live="polite">
+        <div className="panel-body nbp-body" aria-live="polite">
           <p className="nbp-meta">
             Effective <strong>{state.data.table.effectiveDate}</strong>
             {' · '}

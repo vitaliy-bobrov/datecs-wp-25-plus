@@ -108,6 +108,33 @@ function formatTestRate(value: string | undefined): string {
   return rate === null ? value : `${formatRateValue(rate)} (raw ${value})`;
 }
 
+function formatCashierRate(raw: string | undefined): string {
+  const rate = parseRawRate(raw);
+  return rate === null ? '—' : formatRateValue(rate);
+}
+
+function consoleState(snapshot: SessionSnapshot): string {
+  if (snapshot.phase === 'error') return 'error';
+  if (snapshot.updateState !== 'idle') return snapshot.updateState;
+  if (snapshot.writeTestState !== 'idle') return snapshot.writeTestState;
+  if (
+    snapshot.readState === 'failed' ||
+    snapshot.foreignReadState === 'failed' ||
+    snapshot.converterReadState === 'failed'
+  ) {
+    return 'failed';
+  }
+  if (
+    snapshot.readState === 'reading' ||
+    snapshot.foreignReadState === 'reading' ||
+    snapshot.converterReadState === 'reading'
+  ) {
+    return 'reading';
+  }
+  if (snapshot.phase === 'connected' && snapshot.readState === 'read') return 'read';
+  return snapshot.phase;
+}
+
 export function App({ session }: AppProps) {
   const snapshot = useSyncExternalStore(
     session.subscribe,
@@ -164,6 +191,7 @@ export function App({ session }: AppProps) {
     snapshot.writeTestState === 'writing';
 
   const readError = readErrorMessage(snapshot);
+  const displayState = consoleState(snapshot);
 
   const clearCapture = () => {
     if (!deviceBusy) setClearOpen(true);
@@ -257,332 +285,384 @@ export function App({ session }: AppProps) {
 
   return (
     <main className="page">
-      <header className="header">
-        <div>
-          <p className="eyebrow">Datecs WP-25 Plus</p>
-          <h1>Currency reader</h1>
-          <p className="lede">
-            Web Serial connection with automatic preflight, foreign-slot and converter reads, NBP
-            comparison and a confirmed full update. No <code>0xFF</code>.
-          </p>
-        </div>
-        <span className="version">v{__APP_VERSION__}</span>
-      </header>
-
-      <section className="card" aria-labelledby="connection-heading">
-        <div className="card-heading">
-          <div>
-            <h2 id="connection-heading">Connection</h2>
-            <p className="muted">{lockMessage(snapshot.lockState)}</p>
+      <h1 className="sr-only">Datecs WP-25 Plus currency console</h1>
+      <div className="shell">
+        <header className="rail">
+          <div className="brand">
+            <strong>DATECS</strong>
+            <span>WP-25 PLUS · Currency console</span>
           </div>
-          <span className={`state state-${stateClass(snapshot.phase)}`}>
-            {stateLabel(snapshot.phase)}
-          </span>
-        </div>
+          <div className="rail-right">
+            <span className={`lamp lamp-${stateClass(displayState)}`} aria-hidden="true" />
+            <span>{stateLabel(displayState)}</span>
+            <span className="rail-version">v{__APP_VERSION__}</span>
+          </div>
+        </header>
 
-        <div className="connection-grid">
-          <div>
-            <p className="label">Transport</p>
-            <div className="button-row">
-              <button
-                type="button"
-                className="button primary"
-                onClick={() => void connect('webserial')}
-                disabled={!canConnect || !supportsWebSerial()}
-                title={
-                  supportsWebSerial()
-                    ? 'Select the cashier with Web Serial'
-                    : 'Web Serial is unavailable'
-                }
+        <div className="console">
+          <section className="lcd" aria-label="Cashier status display">
+            <div className="lcd-main">
+              <p className="lcd-kicker">Cashier status</p>
+              <p
+                className={`lcd-state${displayState === 'error' || displayState === 'failed' ? ' lcd-state-failure' : ''}`}
               >
-                Connect Web Serial
-              </button>
-              <button
-                type="button"
-                className="button"
-                onClick={() => void session.disconnect()}
-                disabled={snapshot.phase === 'idle' || deviceBusy}
-              >
-                Disconnect
-              </button>
+                {stateLabel(displayState)}
+              </p>
+              <p className="lcd-rates">
+                <span className="lcd-label">Cashier</span>
+                <span>
+                  USD <strong>{formatCashierRate(cashierRates.USD)}</strong>
+                </span>
+                <span>
+                  EUR <strong>{formatCashierRate(cashierRates.EUR)}</strong>
+                </span>
+              </p>
             </div>
-            <p className="hint">Web Serial is the only transport. Nothing is auto-selected.</p>
-            {snapshot.lockState === 'in-use' || snapshot.lockState === 'unavailable' ? (
-              <button type="button" className="button" onClick={() => void session.acquireLock()}>
-                Retry device lock
-              </button>
-            ) : null}
-          </div>
+          </section>
 
-          <dl className="facts">
-            <div>
-              <dt>Transport</dt>
-              <dd>{snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : '—'}</dd>
-            </div>
-            <div>
-              <dt>Device</dt>
-              <dd>{snapshot.info?.label ?? '—'}</dd>
-            </div>
-            <div>
-              <dt>USB IDs</dt>
-              <dd>{formatUsbIds(snapshot.info?.vendorId, snapshot.info?.productId)}</dd>
-            </div>
-          </dl>
-        </div>
-
-        <div
-          className={`status${snapshot.error ? ' status-error' : ''}`}
-          role={snapshot.error ? 'alert' : 'status'}
-          aria-live={snapshot.error ? 'assertive' : 'polite'}
-        >
-          {snapshot.phase === 'connected'
-            ? deviceBusy
-              ? 'Connected · reading cashier…'
-              : 'Connected.'
-            : snapshot.error
-              ? snapshot.error.message
-              : lockMessage(snapshot.lockState)}
-        </div>
-      </section>
-
-      {readError ? (
-        <section className="card read-error" role="alert" aria-labelledby="read-error-heading">
-          <div className="card-heading">
-            <div>
-              <h2 id="read-error-heading">Could not read the cashier</h2>
-              <p className="muted">{readError}</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="button primary"
-            onClick={retryReads}
-            disabled={deviceBusy}
-          >
-            Retry reading
-          </button>
-        </section>
-      ) : null}
-
-      <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
-
-      <RateComparison nbp={nbp} cashier={cashierRates} />
-
-      <UpdatePreview
-        foreign={snapshot.foreignRead}
-        converter={snapshot.converterRead}
-        nbp={nbp}
-        updateState={snapshot.updateState}
-        updateResult={snapshot.updateResult}
-        onRequestUpdate={requestUpdate}
-      />
-
-      {snapshot.converterRead ? (
-        <section className="card write-test-card" aria-labelledby="write-test-heading">
-          <div className="foreign-probe write-test">
-            <div className="card-heading">
+          <section className="card panel connection-panel" aria-labelledby="connection-heading">
+            <div className="card-heading panel-head">
               <div>
-                <h2 id="write-test-heading">Rate write tests</h2>
-                <p className="muted">
-                  One field at a time: temporary +1 raw unit or a flag toggle, readback, restore,
-                  readback. USD, EUR, converter and print-flag tests are separate.
-                </p>
+                <h2 id="connection-heading">Connection</h2>
+                <p className="muted">{lockMessage(snapshot.lockState)}</p>
               </div>
-              <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
-                {stateLabel(snapshot.writeTestState)}
+              <span className={`state state-${stateClass(displayState)}`}>
+                {stateLabel(displayState)}
               </span>
             </div>
-            <div className="button-row">
-              {(['usd', 'eur', 'converter', 'print'] as const).map((target) => (
-                <button
-                  key={target}
-                  type="button"
-                  className="button"
-                  onClick={() => runWriteTest(target)}
-                  disabled={
-                    !snapshot.converterRead ||
-                    snapshot.readState !== 'read' ||
-                    deviceBusy ||
-                    !writeRates[target]
-                  }
-                >
-                  {snapshot.writeTestState === 'writing'
-                    ? 'Writing…'
-                    : target === 'print'
-                      ? 'Test print flag'
-                      : `Test ${target === 'usd' ? 'USD' : target === 'eur' ? 'EUR' : 'converter'} rate`}
-                </button>
-              ))}
-            </div>
-            <dl className="read-values test-values">
-              <div>
-                <dt>USD slot 0</dt>
-                <dd>{formatTestRate(writeRates.usd)}</dd>
-              </div>
-              <div>
-                <dt>EUR slot 1</dt>
-                <dd>{formatTestRate(writeRates.eur)}</dd>
-              </div>
-              <div>
-                <dt>Converter</dt>
-                <dd>{formatTestRate(writeRates.converter)}</dd>
-              </div>
-              <div>
-                <dt>Print converter</dt>
-                <dd>{formatFlag(writeRates.print)}</dd>
-              </div>
-            </dl>
-            {snapshot.writeTest && !snapshot.writeTest.restored ? (
-              <p className="plan-warnings" role="alert">
-                Restore did not verify. The cashier may still hold{` `}
-                <code>
-                  {formatFieldValue(snapshot.writeTest.field, snapshot.writeTest.temporary)}
-                </code>
-                . Do not run the test again; stop and report the log.
-              </p>
-            ) : null}
-            {snapshot.writeTest ? (
-              <dl className="read-values">
-                <div>
-                  <dt>Tested field</dt>
-                  <dd>{writeFieldLabel(snapshot.writeTest.field)}</dd>
-                </div>
-                <div>
-                  <dt>Temporary readback</dt>
-                  <dd>
-                    {formatFieldValue(
-                      snapshot.writeTest.field,
-                      snapshot.writeTest.temporaryReadback,
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Restored readback</dt>
-                  <dd>
-                    {formatFieldValue(
-                      snapshot.writeTest.field,
-                      snapshot.writeTest.restoredReadback,
-                    )}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Restored</dt>
-                  <dd>{snapshot.writeTest.restored ? 'Yes' : 'No'}</dd>
-                </div>
-                {snapshot.writeTest.message ? (
-                  <div>
-                    <dt>Result</dt>
-                    <dd>{snapshot.writeTest.message}</dd>
-                  </div>
-                ) : null}
-              </dl>
-            ) : null}
-          </div>
-        </section>
-      ) : null}
 
-      <section className="card logger" aria-labelledby="logger-heading">
-        <div className="card-heading">
-          <div>
-            <h2 id="logger-heading">Logger</h2>
-            <p className="muted">
-              Device log in memory · showing {entries.length} of {snapshot.capture.length} entries ·
-              NBP is fetched separately
-            </p>
+            <div className="panel-body connection-body">
+              <div className="connection-grid">
+                <div>
+                  <p className="label">Transport</p>
+                  <div className="button-row">
+                    <button
+                      type="button"
+                      className="button primary"
+                      onClick={() => void connect('webserial')}
+                      disabled={!canConnect || !supportsWebSerial()}
+                      title={
+                        supportsWebSerial()
+                          ? 'Select the cashier with Web Serial'
+                          : 'Web Serial is unavailable'
+                      }
+                    >
+                      Connect Web Serial
+                    </button>
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={() => void session.disconnect()}
+                      disabled={snapshot.phase === 'idle' || deviceBusy}
+                    >
+                      Disconnect
+                    </button>
+                  </div>
+                  <p className="hint">
+                    Web Serial is the only transport. Nothing is auto-selected.
+                  </p>
+                  {snapshot.lockState === 'in-use' || snapshot.lockState === 'unavailable' ? (
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={() => void session.acquireLock()}
+                    >
+                      Retry device lock
+                    </button>
+                  ) : null}
+                </div>
+
+                <dl className="facts">
+                  <div>
+                    <dt>Transport</dt>
+                    <dd>
+                      {snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : '—'}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Device</dt>
+                    <dd>{snapshot.info?.label ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>USB IDs</dt>
+                    <dd>{formatUsbIds(snapshot.info?.vendorId, snapshot.info?.productId)}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div
+                className={`status${snapshot.error ? ' status-error' : ''}`}
+                role={snapshot.error ? 'alert' : 'status'}
+                aria-live={snapshot.error ? 'assertive' : 'polite'}
+              >
+                {snapshot.phase === 'connected'
+                  ? deviceBusy
+                    ? 'Connected · reading cashier…'
+                    : 'Connected.'
+                  : snapshot.error
+                    ? snapshot.error.message
+                    : lockMessage(snapshot.lockState)}
+              </div>
+            </div>
+          </section>
+
+          {readError ? (
+            <section
+              className="card panel read-error"
+              role="alert"
+              aria-labelledby="read-error-heading"
+            >
+              <div className="card-heading panel-head">
+                <div>
+                  <h2 id="read-error-heading">Could not read the cashier</h2>
+                  <p className="muted">{readError}</p>
+                </div>
+              </div>
+              <div className="panel-body">
+                <button
+                  type="button"
+                  className="button primary"
+                  onClick={retryReads}
+                  disabled={deviceBusy}
+                >
+                  Retry reading
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          <div className="workspace">
+            <RateComparison nbp={nbp} cashier={cashierRates} />
+            <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
           </div>
-          <div className="button-row compact">
-            <button
-              type="button"
-              className="button"
-              onClick={clearCapture}
-              disabled={deviceBusy || snapshot.capture.length === 0}
-            >
-              Clear
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={() => void copy()}
-              disabled={deviceBusy || snapshot.capture.length === 0}
-            >
-              {copyState === 'copied'
-                ? 'Copied'
-                : copyState === 'failed'
-                  ? 'Copy failed'
-                  : 'Copy text'}
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={() => download('jsonl')}
-              disabled={deviceBusy || snapshot.capture.length === 0}
-            >
-              Download JSONL
-            </button>
-            <button
-              type="button"
-              className="button"
-              onClick={() => download('text')}
-              disabled={deviceBusy || snapshot.capture.length === 0}
-            >
-              Download text
-            </button>
-          </div>
+
+          <UpdatePreview
+            foreign={snapshot.foreignRead}
+            converter={snapshot.converterRead}
+            nbp={nbp}
+            updateState={snapshot.updateState}
+            updateResult={snapshot.updateResult}
+            onRequestUpdate={requestUpdate}
+          />
         </div>
 
-        {entries.length === 0 ? (
-          <p className="empty">No entries yet. Connect or disconnect to create a session entry.</p>
-        ) : (
-          <div className="log-wrap">
-            <table className="log">
-              <caption className="sr-only">Device session log, newest first</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Time</th>
-                  <th scope="col">Kind</th>
-                  <th scope="col">Transport</th>
-                  <th scope="col">Device</th>
-                  <th scope="col">Bytes</th>
-                  <th scope="col">Detail</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry) => (
-                  <tr key={entry.id}>
-                    <td className="mono nowrap">{formatTimestamp(entry.ts)}</td>
-                    <td>{entry.kind}</td>
-                    <td>{entry.transport ? TRANSPORT_LABEL[entry.transport] : '—'}</td>
-                    <td>{entry.device ?? '—'}</td>
-                    <td className="mono bytes">{entry.bytesHex ?? '—'}</td>
-                    <td>
-                      {entrySummary(entry)}
-                      {entry.code ? <span className="code"> {entry.code}</span> : null}
-                      {entry.detail ? (
-                        <details className="log-detail">
-                          <summary>details</summary>
-                          <pre>{JSON.stringify(entry.detail, null, 2)}</pre>
-                        </details>
+        <details className="diag">
+          <summary>Diagnostics · field tests & logger</summary>
+          <div className="diag-body">
+            {snapshot.converterRead ? (
+              <section className="card panel write-test-card" aria-labelledby="write-test-heading">
+                <div className="card-heading panel-head">
+                  <div>
+                    <h2 id="write-test-heading">Rate write tests</h2>
+                    <p className="muted">
+                      One field at a time: temporary +1 raw unit or a flag toggle, readback,
+                      restore, readback. USD, EUR, converter and print-flag tests are separate.
+                    </p>
+                  </div>
+                  <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
+                    {stateLabel(snapshot.writeTestState)}
+                  </span>
+                </div>
+                <div className="panel-body foreign-probe write-test">
+                  <div className="button-row testgrid">
+                    {(['usd', 'eur', 'converter', 'print'] as const).map((target) => (
+                      <button
+                        key={target}
+                        type="button"
+                        className="button"
+                        onClick={() => runWriteTest(target)}
+                        disabled={
+                          !snapshot.converterRead ||
+                          snapshot.readState !== 'read' ||
+                          deviceBusy ||
+                          !writeRates[target]
+                        }
+                      >
+                        {snapshot.writeTestState === 'writing'
+                          ? 'Writing…'
+                          : target === 'print'
+                            ? 'Test print flag'
+                            : `Test ${target === 'usd' ? 'USD' : target === 'eur' ? 'EUR' : 'converter'} rate`}
+                      </button>
+                    ))}
+                  </div>
+                  <dl className="read-values test-values">
+                    <div>
+                      <dt>USD slot 0</dt>
+                      <dd>{formatTestRate(writeRates.usd)}</dd>
+                    </div>
+                    <div>
+                      <dt>EUR slot 1</dt>
+                      <dd>{formatTestRate(writeRates.eur)}</dd>
+                    </div>
+                    <div>
+                      <dt>Converter</dt>
+                      <dd>{formatTestRate(writeRates.converter)}</dd>
+                    </div>
+                    <div>
+                      <dt>Print converter</dt>
+                      <dd>{formatFlag(writeRates.print)}</dd>
+                    </div>
+                  </dl>
+                  {snapshot.writeTest && !snapshot.writeTest.restored ? (
+                    <p className="plan-warnings failure" role="alert">
+                      Restore did not verify. The cashier may still hold{` `}
+                      <code>
+                        {formatFieldValue(snapshot.writeTest.field, snapshot.writeTest.temporary)}
+                      </code>
+                      . Do not run the test again; stop and report the log.
+                    </p>
+                  ) : null}
+                  {snapshot.writeTest ? (
+                    <dl className="read-values">
+                      <div>
+                        <dt>Tested field</dt>
+                        <dd>{writeFieldLabel(snapshot.writeTest.field)}</dd>
+                      </div>
+                      <div>
+                        <dt>Temporary readback</dt>
+                        <dd>
+                          {formatFieldValue(
+                            snapshot.writeTest.field,
+                            snapshot.writeTest.temporaryReadback,
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Restored readback</dt>
+                        <dd>
+                          {formatFieldValue(
+                            snapshot.writeTest.field,
+                            snapshot.writeTest.restoredReadback,
+                          )}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Restored</dt>
+                        <dd>{snapshot.writeTest.restored ? 'Yes' : 'No'}</dd>
+                      </div>
+                      {snapshot.writeTest.message ? (
+                        <div>
+                          <dt>Result</dt>
+                          <dd>{snapshot.writeTest.message}</dd>
+                        </div>
                       ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </section>
+                    </dl>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
 
-      <footer className="footer">
-        <p>
-          Read-only records plus a confirmed full update with backup, readback and restore. No
-          <code>0xFF</code>.
-        </p>
-      </footer>
+            <section className="card panel logger" aria-labelledby="logger-heading">
+              <div className="card-heading panel-head">
+                <div>
+                  <h2 id="logger-heading">Logger</h2>
+                  <p className="muted">
+                    Device log in memory · showing {entries.length} of {snapshot.capture.length}{' '}
+                    entries · NBP is fetched separately
+                  </p>
+                </div>
+                <div className="button-row compact logger-actions">
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => void copy()}
+                    disabled={deviceBusy || snapshot.capture.length === 0}
+                  >
+                    {copyState === 'copied'
+                      ? 'Copied'
+                      : copyState === 'failed'
+                        ? 'Copy failed'
+                        : 'Copy text'}
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => download('jsonl')}
+                    disabled={deviceBusy || snapshot.capture.length === 0}
+                  >
+                    Download JSONL
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => download('text')}
+                    disabled={deviceBusy || snapshot.capture.length === 0}
+                  >
+                    Download text
+                  </button>
+                  <button
+                    type="button"
+                    className="button danger logger-clear"
+                    onClick={clearCapture}
+                    disabled={deviceBusy || snapshot.capture.length === 0}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              <div className="panel-body">
+                {entries.length === 0 ? (
+                  <p className="empty">
+                    No entries yet. Connect or disconnect to create a session entry.
+                  </p>
+                ) : (
+                  <div className="log-wrap">
+                    <table className="log">
+                      <caption className="sr-only">Device session log, newest first</caption>
+                      <thead>
+                        <tr>
+                          <th scope="col">Time</th>
+                          <th scope="col">Kind</th>
+                          <th scope="col">Transport</th>
+                          <th scope="col">Device</th>
+                          <th scope="col">Bytes</th>
+                          <th scope="col">Detail</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {entries.map((entry) => (
+                          <tr key={entry.id}>
+                            <td className="mono nowrap">{formatTimestamp(entry.ts)}</td>
+                            <td>{entry.kind}</td>
+                            <td>{entry.transport ? TRANSPORT_LABEL[entry.transport] : '—'}</td>
+                            <td>{entry.device ?? '—'}</td>
+                            <td className="mono bytes">{entry.bytesHex ?? '—'}</td>
+                            <td>
+                              {entrySummary(entry)}
+                              {entry.code ? <span className="code"> {entry.code}</span> : null}
+                              {entry.detail ? (
+                                <details className="log-detail">
+                                  <summary>details</summary>
+                                  <pre>{JSON.stringify(entry.detail, null, 2)}</pre>
+                                </details>
+                              ) : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </section>
+          </div>
+        </details>
+
+        <footer className="footer">
+          <p>
+            Read-only records plus a confirmed full update with backup, readback and restore. No
+            <code>0xFF</code>.
+          </p>
+        </footer>
+      </div>
 
       <ConfirmDialog
         open={updateOpen}
         title="Apply NBP update?"
         confirmLabel="Update cashier"
+        confirmTone="primary"
         onConfirm={confirmUpdate}
         onCancel={() => {
           setUpdateOpen(false);
@@ -630,6 +710,7 @@ export function App({ session }: AppProps) {
         open={clearOpen}
         title="Clear the device log?"
         confirmLabel="Clear"
+        confirmTone="danger"
         onConfirm={confirmClear}
         onCancel={() => setClearOpen(false)}
       >
@@ -643,6 +724,7 @@ export function App({ session }: AppProps) {
         open={writeOpen}
         title={`Run ${writeTargetLabel(writeTarget)} test?`}
         confirmLabel="Run test"
+        confirmTone="primary"
         onConfirm={confirmWriteTest}
         onCancel={() => {
           setWriteOpen(false);

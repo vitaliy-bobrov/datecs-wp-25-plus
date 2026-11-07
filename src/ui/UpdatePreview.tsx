@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CurrencyCode } from '../domain/rates';
-import { differenceTone, formatFlag, formatPercent, formatRateValue } from '../domain/rates';
+import { differenceTone, formatFlag, formatRateValue } from '../domain/rates';
 import {
   buildUpdatePlan,
   type ConverterSnapshot,
@@ -8,9 +8,10 @@ import {
   type FullUpdateResult,
   type UpdateTargets,
 } from '../domain/update-plan';
+import { formatSignedPercent, formatSignedRate } from './format';
 import type { NbpState } from './NbpPanel';
 
-function targetTone(current: number | null, target: number): string {
+function changeTone(current: number | null, target: number): string {
   if (current === null) return '';
   return `delta-${differenceTone(target - current) ?? 'flat'}`;
 }
@@ -53,9 +54,39 @@ export function UpdatePreview({
     [foreign, converter, nbpRates, printConverter],
   );
 
+  const planRows = plan
+    ? [
+        { key: 'usd', label: 'USD rate', current: plan.usd.current, target: plan.usd.target },
+        { key: 'eur', label: 'EUR rate', current: plan.eur.current, target: plan.eur.target },
+        ...(plan.converter
+          ? [
+              {
+                key: 'converter',
+                label: 'Converter rate',
+                current: plan.converter.current,
+                target: plan.converter.target,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const printCurrent =
+    converter?.printFlag === undefined
+      ? null
+      : converter.printFlag === '1'
+        ? 'Enabled'
+        : 'Disabled';
+  const printTarget = printConverter ? 'Enabled' : 'Disabled';
+  const printChange =
+    printCurrent === null
+      ? null
+      : printCurrent === printTarget
+        ? 'No change'
+        : `${printCurrent} → ${printTarget}`;
+
   return (
-    <section className="card update-preview" aria-labelledby="update-preview-heading">
-      <div className="card-heading">
+    <section className="card panel update-preview" aria-labelledby="update-preview-heading">
+      <div className="card-heading panel-head">
         <div>
           <h2 id="update-preview-heading">Update preview</h2>
           <p className="muted">
@@ -70,56 +101,63 @@ export function UpdatePreview({
       ) : !plan ? (
         <p className="empty">Complete the foreign reads and NBP reference to build a preview.</p>
       ) : (
-        <>
-          <table className="comparison-table plan-table">
+        <div className="panel-body">
+          <table className="comparison-table plan-table desktop-table">
             <thead>
               <tr>
                 <th scope="col">Record</th>
                 <th scope="col">Cashier now</th>
-                <th scope="col">NBP target</th>
+                <th scope="col">Update to</th>
+                <th scope="col">Change</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <th scope="row">USD rate</th>
-                <td>{plan.usd.current === null ? '—' : formatRateValue(plan.usd.current)}</td>
-                <td className={targetTone(plan.usd.current, plan.usd.target)}>
-                  {formatRateValue(plan.usd.target)}
-                </td>
-              </tr>
-              <tr>
-                <th scope="row">EUR rate</th>
-                <td>{plan.eur.current === null ? '—' : formatRateValue(plan.eur.current)}</td>
-                <td className={targetTone(plan.eur.current, plan.eur.target)}>
-                  {formatRateValue(plan.eur.target)}
-                </td>
-              </tr>
-              {plan.converter ? (
-                <tr>
-                  <th scope="row">Converter rate</th>
-                  <td>
-                    {plan.converter.current === null
-                      ? '—'
-                      : formatRateValue(plan.converter.current)}
-                  </td>
-                  <td className={targetTone(plan.converter.current, plan.converter.target)}>
-                    {formatRateValue(plan.converter.target)}
-                  </td>
-                </tr>
-              ) : null}
-              <tr>
-                <th scope="row">Print converter</th>
-                <td>
-                  {converter?.printFlag === undefined
-                    ? '—'
-                    : converter.printFlag === '1'
-                      ? 'Enabled'
-                      : 'Disabled'}
-                </td>
-                <td>{printConverter ? 'Enabled' : 'Disabled'}</td>
-              </tr>
+              {planRows.map((row) => {
+                const change = row.current === null ? null : row.target - row.current;
+                return (
+                  <tr key={row.key}>
+                    <th scope="row">{row.label}</th>
+                    <td>{row.current === null ? '—' : formatRateValue(row.current)}</td>
+                    <td>{formatRateValue(row.target)}</td>
+                    <td className={changeTone(row.current, row.target)}>
+                      {change === null ? '—' : formatSignedRate(change)}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+
+          <div className="records">
+            {planRows.map((row) => {
+              const change = row.current === null ? null : row.target - row.current;
+              return (
+                <article className="record" key={row.key}>
+                  <h3 className="record-title">{row.label}</h3>
+                  <dl className="record-list">
+                    <dt>Cashier now</dt>
+                    <dd>{row.current === null ? '—' : formatRateValue(row.current)}</dd>
+                    <dt>Update to</dt>
+                    <dd>{formatRateValue(row.target)}</dd>
+                    <dt>Change</dt>
+                    <dd className={changeTone(row.current, row.target)}>
+                      {change === null ? '—' : formatSignedRate(change)}
+                    </dd>
+                  </dl>
+                </article>
+              );
+            })}
+          </div>
+
+          <dl className="read-values device-setting">
+            <div>
+              <dt>Print currency converter after update</dt>
+              <dd>
+                {printCurrent ?? '—'} → {printTarget}
+                {printChange ? ` · ${printChange}` : ''}
+              </dd>
+            </div>
+          </dl>
 
           <dl className="read-values plan-backup">
             <div>
@@ -166,11 +204,11 @@ export function UpdatePreview({
           <p className="hint">
             {plan.usd.percent === null || plan.eur.percent === null
               ? 'Difference unavailable for a missing current rate.'
-              : `USD ${formatPercent(plan.usd.percent)} · EUR ${formatPercent(plan.eur.percent)} vs NBP.`}{' '}
+              : `USD ${formatSignedPercent(plan.usd.percent)} · EUR ${formatSignedPercent(plan.eur.percent)} vs NBP.`}{' '}
             No write occurs until you confirm Update cashier.
           </p>
 
-          <div className="button-row">
+          <div className="button-row update-actions">
             <button
               type="button"
               className="button primary"
@@ -191,13 +229,13 @@ export function UpdatePreview({
                 });
               }}
             >
-              {updateState === 'updating' ? 'Updating…' : 'Update cashier'}
+              {updateState === 'updating' ? 'Updating…' : 'Review update'}
             </button>
           </div>
 
           {updateResult ? (
             <p
-              className={updateResult.restored ? 'hint' : 'plan-warnings'}
+              className={updateResult.restored ? 'hint' : 'plan-warnings failure'}
               role={updateResult.restored ? undefined : 'alert'}
             >
               {updateState === 'verified'
@@ -207,7 +245,7 @@ export function UpdatePreview({
                   : 'Update failed and restore did not verify.'}
             </p>
           ) : null}
-        </>
+        </div>
       )}
     </section>
   );

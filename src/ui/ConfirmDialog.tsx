@@ -1,9 +1,12 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 
+type ConfirmTone = 'primary' | 'danger';
+
 interface ConfirmDialogProps {
   open: boolean;
   title: string;
   confirmLabel: string;
+  confirmTone: ConfirmTone;
   busy?: boolean;
   children: ReactNode;
   onConfirm: () => void;
@@ -14,6 +17,7 @@ export function ConfirmDialog({
   open,
   title,
   confirmLabel,
+  confirmTone,
   busy = false,
   children,
   onConfirm,
@@ -46,7 +50,12 @@ export function ConfirmDialog({
           <button type="button" className="button" onClick={onCancel} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className="button danger" onClick={onConfirm} disabled={busy}>
+          <button
+            type="button"
+            className={`button ${confirmTone}`}
+            onClick={onConfirm}
+            disabled={busy}
+          >
             {confirmLabel}
           </button>
         </div>
