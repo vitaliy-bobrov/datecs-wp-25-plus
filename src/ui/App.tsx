@@ -120,8 +120,11 @@ export function App({ session }: AppProps) {
     setClearOpen(false);
   };
 
-  const connect = (kind: TransportKind) => {
-    void session.connect(kind);
+  const connect = async (kind: TransportKind) => {
+    await session.connect(kind);
+    if (session.getSnapshot().phase === 'connected') {
+      await session.runPreflight();
+    }
   };
 
   const writeOriginal = snapshot.foreignRead?.slot0FullName;
@@ -186,7 +189,7 @@ export function App({ session }: AppProps) {
               <button
                 type="button"
                 className="button primary"
-                onClick={() => connect('webserial')}
+                onClick={() => void connect('webserial')}
                 disabled={!canConnect || !supportsWebSerial()}
                 title={
                   supportsWebSerial()
@@ -199,7 +202,7 @@ export function App({ session }: AppProps) {
               <button
                 type="button"
                 className="button"
-                onClick={() => connect('simulator')}
+                onClick={() => void connect('simulator')}
                 disabled={!canConnect}
                 title="Open the built-in Type2 preflight simulator"
               >
@@ -259,8 +262,8 @@ export function App({ session }: AppProps) {
           <div>
             <h2 id="preflight-heading">Preflight</h2>
             <p className="muted">
-              Sends the captured short preflight. Currency reads are separate; no <code>0xFF</code>
-              or write.
+              Connect runs this captured short preflight automatically; use the button to retry.
+              Currency reads are separate; no <code>0xFF</code> or write.
             </p>
           </div>
           <span className={`state state-${stateClass(snapshot.captureState)}`}>

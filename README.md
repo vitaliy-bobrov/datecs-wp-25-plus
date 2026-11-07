@@ -31,13 +31,13 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 Simulator:
 
 1. Open the Pages URL in the browser.
-2. Choose **Open simulator**.
-3. Click **Run preflight** and confirm `captured · type2` with the exact tx/rx bytes.
+2. Choose **Open simulator**; the preflight runs automatically.
+3. Confirm `captured · type2` with the exact tx/rx bytes; use **Run preflight** to retry.
 
 Hardware:
 
-1. Choose **Connect Web Serial** and select the cashier.
-2. Click **Run preflight**.
+1. Choose **Connect Web Serial** and select the cashier; the preflight runs automatically.
+2. Use **Run preflight** only if it needs a retry.
 3. Download the JSONL and/or text log.
 4. Confirm the preflight tx/rx; then use Read local currencies and the experimental foreign read. No rate write is sent; the one-field full-name test is separate and requires explicit confirmation.
 
