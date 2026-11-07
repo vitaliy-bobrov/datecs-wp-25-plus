@@ -27,6 +27,8 @@ describe('NbpPanel', () => {
     expect(html).toContain('3.9321');
     expect(html).toContain('PLN per 1 USD');
     expect(html).toContain('215/A/NBP/2026');
+    expect(html).toContain('https://nbp.pl/statystyka-i-sprawozdawczosc/kursy/');
+    expect(html).not.toContain('https://api.nbp.pl/');
   });
 
   it('renders the error and retry state', () => {

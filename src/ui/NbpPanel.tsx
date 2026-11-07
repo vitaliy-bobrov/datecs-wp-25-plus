@@ -75,8 +75,15 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
             })}
           </dl>
           <p className="hint">
-            Source: <a href="https://api.nbp.pl/">Narodowy Bank Polski, table A</a>. Reference only;
-            the cashier comparison uses read slot values when available.
+            Source:{' '}
+            <a
+              href="https://nbp.pl/statystyka-i-sprawozdawczosc/kursy/"
+              target="_blank"
+              rel="noreferrer"
+            >
+              Narodowy Bank Polski — exchange rates, table A
+            </a>
+            . Reference only; the cashier comparison uses read slot values when available.
           </p>
         </div>
       )}
