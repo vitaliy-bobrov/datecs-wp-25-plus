@@ -58,6 +58,10 @@ interface ForeignReadResult {
   slot0Rate?: string;
   slot1Name?: string;
   slot1Rate?: string;
+  slot0FullName?: string;
+  slot0ChangeAfterZ?: string;
+  slot1FullName?: string;
+  slot1ChangeAfterZ?: string;
   rawFrames?: string[];
 }
 
@@ -737,6 +741,18 @@ export class DeviceSession {
             break;
           case 'slot1Rate':
             foreign.slot1Rate = value;
+            break;
+          case 'slot0FullName':
+            foreign.slot0FullName = value;
+            break;
+          case 'slot0ChangeAfterZ':
+            foreign.slot0ChangeAfterZ = value;
+            break;
+          case 'slot1FullName':
+            foreign.slot1FullName = value;
+            break;
+          case 'slot1ChangeAfterZ':
+            foreign.slot1ChangeAfterZ = value;
             break;
           default:
             break;

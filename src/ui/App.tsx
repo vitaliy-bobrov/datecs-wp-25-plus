@@ -13,6 +13,12 @@ interface AppProps {
   session: DeviceSession;
 }
 
+function yesNo(value: string | undefined): string {
+  if (value === '1') return 'Yes';
+  if (value === '0') return 'No';
+  return value ?? '—';
+}
+
 const TRANSPORT_LABEL: Record<TransportKind, string> = {
   webserial: 'Web Serial',
   simulator: 'Simulator',
@@ -322,8 +328,8 @@ export function App({ session }: AppProps) {
               <div>
                 <h4>Foreign slots</h4>
                 <p className="muted">
-                  Reads name and raw rate for slots 0 and 1. No <code>0xFF</code>, no write. This is
-                  experimental until the rate query is confirmed on hardware.
+                  Reads names, full names, raw rates and Change after Z flags for slots 0 and 1. No
+                  <code>0xFF</code>, no write. Experimental until confirmed on hardware.
                 </p>
               </div>
               <span className={`state state-${stateClass(snapshot.foreignReadState)}`}>
@@ -355,6 +361,22 @@ export function App({ session }: AppProps) {
                 <div>
                   <dt>Slot 1 rate</dt>
                   <dd>{snapshot.foreignRead.slot1Rate ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 0 full name</dt>
+                  <dd>{snapshot.foreignRead.slot0FullName ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 0 change after Z</dt>
+                  <dd>{yesNo(snapshot.foreignRead.slot0ChangeAfterZ)}</dd>
+                </div>
+                <div>
+                  <dt>Slot 1 full name</dt>
+                  <dd>{snapshot.foreignRead.slot1FullName ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 1 change after Z</dt>
+                  <dd>{yesNo(snapshot.foreignRead.slot1ChangeAfterZ)}</dd>
                 </div>
               </dl>
             ) : null}

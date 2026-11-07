@@ -56,7 +56,15 @@ function nibbles(value: number): number[] {
   });
 }
 
-type ForeignReadFrameLabel = 'slot0Name' | 'slot0Rate' | 'slot1Name' | 'slot1Rate';
+type ForeignReadFrameLabel =
+  | 'slot0Name'
+  | 'slot0Rate'
+  | 'slot1Name'
+  | 'slot1Rate'
+  | 'slot0FullName'
+  | 'slot0ChangeAfterZ'
+  | 'slot1FullName'
+  | 'slot1ChangeAfterZ';
 
 export interface ForeignReadFrame {
   label: ForeignReadFrameLabel;
@@ -82,6 +90,10 @@ export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [
   { label: 'slot0Rate', bytes: buildReadQuery('ExchangeRate\t0\t\t', 0x28) },
   { label: 'slot1Name', bytes: buildReadQuery('CurrNameForeign\t1\t\t', 0x29) },
   { label: 'slot1Rate', bytes: buildReadQuery('ExchangeRate\t1\t\t', 0x2a) },
+  { label: 'slot0FullName', bytes: buildReadQuery('CurrFullNameForeign\t0\t\t', 0x2b) },
+  { label: 'slot0ChangeAfterZ', bytes: buildReadQuery('ForeignCurrChangeAfterZ\t0\t\t', 0x2c) },
+  { label: 'slot1FullName', bytes: buildReadQuery('CurrFullNameForeign\t1\t\t', 0x2d) },
+  { label: 'slot1ChangeAfterZ', bytes: buildReadQuery('ForeignCurrChangeAfterZ\t1\t\t', 0x2e) },
 ];
 
 export function parseReadResponse(input: Uint8Array): ReadResponse | null {

@@ -370,7 +370,7 @@ describe('DeviceSession', () => {
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
 
     const status = Uint8Array.from([0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80]);
-    for (const value of ['USD', '392100', 'EUR', '439250']) {
+    for (const value of ['USD', '392100', 'EUR', '439250', 'US Dollar', '1', 'Euro', '0']) {
       const body = Uint8Array.from([
         0x01,
         ...new TextEncoder().encode(`0039'00??0\t${value}\t`),
@@ -393,8 +393,12 @@ describe('DeviceSession', () => {
       slot0Rate: '392100',
       slot1Name: 'EUR',
       slot1Rate: '439250',
+      slot0FullName: 'US Dollar',
+      slot0ChangeAfterZ: '1',
+      slot1FullName: 'Euro',
+      slot1ChangeAfterZ: '0',
     });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 4);
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8);
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 

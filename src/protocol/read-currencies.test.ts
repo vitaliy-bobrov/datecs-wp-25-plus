@@ -43,12 +43,16 @@ describe('local currency read protocol', () => {
 
 describe('foreign read probe', () => {
   it('builds four Type2 read queries without 0xFF', () => {
-    expect(FOREIGN_READ_FRAMES).toHaveLength(4);
+    expect(FOREIGN_READ_FRAMES).toHaveLength(8);
     expect(FOREIGN_READ_FRAMES.map((frame) => frame.label)).toEqual([
       'slot0Name',
       'slot0Rate',
       'slot1Name',
       'slot1Rate',
+      'slot0FullName',
+      'slot0ChangeAfterZ',
+      'slot1FullName',
+      'slot1ChangeAfterZ',
     ]);
     for (const { bytes: frame } of FOREIGN_READ_FRAMES) {
       expect(frame[0]).toBe(0x01);
@@ -59,5 +63,11 @@ describe('foreign read probe', () => {
     }
     expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[0]?.bytes)).toContain('CurrNameForeign');
     expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[1]?.bytes)).toContain('ExchangeRate');
+    expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[4]?.bytes)).toContain(
+      'CurrFullNameForeign',
+    );
+    expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[5]?.bytes)).toContain(
+      'ForeignCurrChangeAfterZ',
+    );
   });
 });
