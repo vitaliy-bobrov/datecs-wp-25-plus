@@ -50,7 +50,7 @@ describe('RateComparison', () => {
         readAt="2026-11-07T10:15:00.000Z"
       />,
     );
-    expect(html).toContain('Last read');
+    expect(html).toMatch(/Last read\s+<span/);
     expect(html).toContain('differences are unavailable');
     expect(html).toContain('3.9251');
     expect(html).toContain('4.3955');
