@@ -68,6 +68,25 @@ describe('preflight protocol', () => {
     expect(parseResponse(raw).kind).toBe('valid');
   });
 
+  it('parses the real 2026-11-07 Type2 preflight response', () => {
+    const raw = Uint8Array.from(
+      '16013030333e203030343a300980808280869a8080090480808280869a808005303a343e03'
+        .match(/../g)!
+        .map((byte) => Number.parseInt(byte, 16)),
+    );
+    const outcome = parseResponse(raw);
+
+    expect(outcome.kind).toBe('valid');
+    if (outcome.kind !== 'valid') return;
+    expect(outcome.frame.mode).toBe('type2');
+    expect(outcome.frame.header).toBe('003> 004:0');
+    expect(outcome.frame.sequence).toBe(3);
+    expect(outcome.frame.command).toBe(4);
+    expect(outcome.frame.status).toHaveLength(8);
+    expect(outcome.frame.secondaryStatus).toHaveLength(8);
+    expect(Array.from(outcome.frame.status)).toEqual([0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80]);
+  });
+
   it('rejects a corrupted BCC', () => {
     const raw = longFrame([], [0, 1, 2, 3, 4, 5]);
     raw[raw.length - 2] = 0x3f;

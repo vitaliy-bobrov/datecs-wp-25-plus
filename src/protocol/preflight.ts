@@ -7,7 +7,7 @@ export const PREFLIGHT_FRAME = Uint8Array.from([
 export const PREFLIGHT_SEQUENCE = 0x30;
 export const PREFLIGHT_COMMAND = 0x32;
 
-export type FrameMode = 'short' | 'long';
+export type FrameMode = 'short' | 'long' | 'type2';
 
 export interface ParsedFrame {
   mode: FrameMode;
@@ -15,6 +15,9 @@ export interface ParsedFrame {
   command: number;
   data: Uint8Array;
   status: Uint8Array;
+  secondaryStatus?: Uint8Array;
+  header?: string;
+  preamble?: Uint8Array;
   rawHex: string;
 }
 
@@ -148,6 +151,59 @@ export function parseShort(bytes: Uint8Array): ParsedFrame | null {
   return null;
 }
 
+export function parseType2(input: Uint8Array): ParsedFrame | null {
+  let frame = input;
+  let preamble = new Uint8Array();
+  let offset = 0;
+  while (frame[offset] === 0x16) offset += 1;
+  if (offset > 0) {
+    preamble = frame.slice(0, offset);
+    frame = frame.slice(offset);
+  }
+
+  if (frame.length < 20 || frame[0] !== 0x01 || frame[frame.length - 1] !== 0x03) return null;
+
+  const firstTab = frame.indexOf(0x09, 1);
+  const secondTab = firstTab >= 0 ? frame.indexOf(0x09, firstTab + 1) : -1;
+  if (firstTab < 2 || secondTab < 0) return null;
+
+  const enq = frame.length - 6;
+  const bccStart = enq + 1;
+  if (frame[enq] !== 0x05 || frame[secondTab + 1] !== 0x04) return null;
+  if (bccStart + 4 !== frame.length - 1) return null;
+
+  const status = frame.slice(firstTab + 1, secondTab);
+  const secondaryStatus = frame.slice(secondTab + 2, enq);
+  if (status.length !== 8 || secondaryStatus.length !== 8) return null;
+
+  const headerBytes = frame.slice(1, firstTab);
+  const header = new TextDecoder().decode(headerBytes);
+  const tokens = header.split(' ');
+  if (tokens.length !== 2) return null;
+
+  const sequenceMatch = /^(\d{3})>$/.exec(tokens[0] ?? '');
+  const commandMatch = /^(\d{3}):(.*)$/.exec(tokens[1] ?? '');
+  if (!sequenceMatch || !commandMatch) return null;
+
+  const sequence = Number(sequenceMatch[1]);
+  const command = Number(commandMatch[1]);
+  if (!Number.isInteger(sequence) || !Number.isInteger(command)) return null;
+
+  if (!bccMatches(frame, bccStart, sumFromStxToEnq(frame, enq))) return null;
+
+  return {
+    mode: 'type2',
+    sequence,
+    command,
+    data: new TextEncoder().encode(commandMatch[2] ?? ''),
+    status,
+    secondaryStatus,
+    header,
+    preamble,
+    rawHex: toHex(input),
+  };
+}
+
 export function parseResponse(bytes: Uint8Array): ParseOutcome {
   const attempts: ParseAttempt[] = [];
   const frames: ParsedFrame[] = [];
@@ -167,6 +223,14 @@ export function parseResponse(bytes: Uint8Array): ParseOutcome {
     reason: short ? undefined : 'short frame envelope/length/BCC/status did not validate',
   });
   if (short) frames.push(short);
+
+  const type2 = parseType2(bytes);
+  attempts.push({
+    mode: 'type2',
+    accepted: type2 !== null,
+    reason: type2 ? undefined : 'type2 ASCII/BCC/status shape did not validate',
+  });
+  if (type2) frames.push(type2);
 
   if (frames.length === 1) {
     return { kind: 'valid', frame: frames[0]!, attempts };

@@ -26,8 +26,9 @@ export interface SessionError {
 
 export interface PreflightResult {
   status: 'captured' | 'captureOnly' | 'failed';
-  mode?: 'short' | 'long';
+  mode?: 'short' | 'long' | 'type2';
   statusHex?: string;
+  secondaryStatusHex?: string;
   rawHex?: string;
   reason?: string;
 }
@@ -270,6 +271,9 @@ export class DeviceSession {
         status: 'captured',
         mode: outcome.frame.mode,
         statusHex: toHex(outcome.frame.status),
+        secondaryStatusHex: outcome.frame.secondaryStatus
+          ? toHex(outcome.frame.secondaryStatus)
+          : undefined,
         rawHex: toHex(raw),
       };
       this.append({
@@ -279,6 +283,8 @@ export class DeviceSession {
         detail: {
           mode: outcome.frame.mode,
           statusHex: result.statusHex,
+          secondaryStatusHex: result.secondaryStatusHex,
+          header: outcome.frame.header,
           rawHex: result.rawHex,
           attempts: outcome.attempts,
           ...environment,

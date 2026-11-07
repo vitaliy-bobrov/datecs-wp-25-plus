@@ -186,6 +186,7 @@ export function App({ session }: AppProps) {
               <strong>{snapshot.preflight.status}</strong>
               {snapshot.preflight.mode ? ` · ${snapshot.preflight.mode} frame` : ''}
               {snapshot.preflight.statusHex ? ` · status ${snapshot.preflight.statusHex}` : ''}
+              {snapshot.preflight.secondaryStatusHex ? ` · status2 ${snapshot.preflight.secondaryStatusHex}` : ''}
               {snapshot.preflight.reason ? ` · ${snapshot.preflight.reason}` : ''}
             </p>
             {snapshot.preflight.rawHex ? (
