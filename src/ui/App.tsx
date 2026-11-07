@@ -122,9 +122,14 @@ export function App({ session }: AppProps) {
 
   const connect = async (kind: TransportKind) => {
     await session.connect(kind);
-    if (session.getSnapshot().phase === 'connected') {
-      await session.runPreflight();
-    }
+    if (session.getSnapshot().phase !== 'connected') return;
+
+    await session.runPreflight();
+    if (kind !== 'webserial' || session.getSnapshot().captureState !== 'captured') return;
+
+    await session.runReadForeign();
+    if (session.getSnapshot().foreignReadState !== 'read') return;
+    await session.runReadConverter();
   };
 
   const writeOriginal = snapshot.foreignRead?.slot0FullName;
@@ -164,8 +169,9 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Currency reader</h1>
           <p className="lede">
-            Web Serial connection with automatic preflight, foreign-slot reads, NBP comparison and a
-            one-field full-name write test. No <code>0xFF</code>; no rate or multi-field write.
+            Web Serial connection with automatic preflight, foreign-slot and converter reads, NBP
+            comparison and a one-field full-name write test. No <code>0xFF</code>; no rate or
+            multi-field write.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -262,8 +268,8 @@ export function App({ session }: AppProps) {
           <div>
             <h2 id="preflight-heading">Preflight</h2>
             <p className="muted">
-              Connect runs this captured short preflight automatically; use the button to retry.
-              Currency reads are separate; no <code>0xFF</code> or write.
+              Connect runs the preflight, foreign reads and converter read automatically; use the
+              buttons to retry. No <code>0xFF</code> or write.
             </p>
           </div>
           <span className={`state state-${stateClass(snapshot.captureState)}`}>
