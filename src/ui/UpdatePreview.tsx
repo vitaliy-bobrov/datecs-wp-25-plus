@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { CurrencyCode } from '../domain/rates';
 import { differenceTone, formatFlag, formatRateValue } from '../domain/rates';
 import {
@@ -35,7 +35,26 @@ export function UpdatePreview({
   updateResult,
   onRequestUpdate,
 }: UpdatePreviewProps) {
-  const [printConverter, setPrintConverter] = useState(true);
+  const currentFlag = converter?.printFlag;
+  const [printConverter, setPrintConverter] = useState(currentFlag === '1');
+  const [seededFlag, setSeededFlag] = useState<string | null>(
+    currentFlag === '0' || currentFlag === '1' ? currentFlag : null,
+  );
+  const printTouched = useRef(false);
+  const reviewGateId = useId();
+  const readGateReasonId = useId();
+  const noDiffReasonId = useId();
+
+  useEffect(() => {
+    if (currentFlag !== '0' && currentFlag !== '1') return;
+    if (printTouched.current || seededFlag === currentFlag) return;
+    setPrintConverter(currentFlag === '1');
+    setSeededFlag(currentFlag);
+  }, [currentFlag, seededFlag]);
+
+  const printReady =
+    currentFlag !== undefined && (printTouched.current || seededFlag === currentFlag);
+
   const nbpRates = useMemo(() => {
     if (nbp.status !== 'ready') return {};
     const rates: Partial<Record<CurrencyCode, string>> = {};
@@ -86,14 +105,49 @@ export function UpdatePreview({
         ? 'No change'
         : `${printCurrent} → ${printTarget}`;
   const currentLabel = readFresh ? 'Cashier now' : 'Last read';
+  const staleNbp = nbp.status === 'ready' && nbp.data.stale;
+  const reviewGate: { tone: 'stale' | 'failed' | 'unavailable'; message: string } | null =
+    !readFresh || !plan
+      ? null
+      : staleNbp
+        ? {
+            tone: 'stale',
+            message:
+              'NBP table is stale (older than seven calendar days). Refresh the reference before updating.',
+          }
+        : updateState === 'failed'
+          ? {
+              tone: 'failed',
+              message: 'The last update failed. Read the cashier again before retrying.',
+            }
+          : plan.converter === undefined
+            ? {
+                tone: 'unavailable',
+                message:
+                  'The converter record is unavailable. Read the cashier again before updating.',
+              }
+            : null;
+  const canReview =
+    readFresh &&
+    plan?.hasChanges === true &&
+    plan.converter !== undefined &&
+    printReady &&
+    reviewGate === null &&
+    updateState !== 'updating' &&
+    onRequestUpdate !== undefined;
   const readGate = !readFresh ? (
     <div className="panel-body update-empty-gate">
-      <p className="hint update-read-gate">
+      <p className="hint update-read-gate" id={readGateReasonId}>
         Cashier records are not current. Read again before updating; the values above are the last
         complete read.
       </p>
       <div className="button-row update-actions">
-        <button type="button" className="button primary" aria-disabled="true">
+        <button
+          type="button"
+          className="button primary"
+          aria-disabled="true"
+          aria-describedby={readGateReasonId}
+        >
           Review update
         </button>
       </div>
@@ -226,7 +280,11 @@ export function UpdatePreview({
             <input
               type="checkbox"
               checked={printConverter}
-              onChange={(event) => setPrintConverter(event.target.checked)}
+              onChange={(event) => {
+                printTouched.current = true;
+                setPrintConverter(event.target.checked);
+                setSeededFlag(currentFlag ?? null);
+              }}
             />
             <span>Print currency converter after update</span>
           </label>
@@ -239,13 +297,18 @@ export function UpdatePreview({
             </ul>
           ) : null}
 
-          <p className={readFresh && plan.hasChanges ? 'hint' : 'empty'}>
-            {!readFresh
-              ? 'Last complete read loaded. Read again before updating.'
-              : plan.hasChanges
-                ? 'Changes are ready for the update gate.'
-                : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
-          </p>
+          {reviewGate ? null : (
+            <p
+              className={readFresh && plan.hasChanges ? 'hint' : 'empty'}
+              id={!plan.hasChanges ? noDiffReasonId : undefined}
+            >
+              {!readFresh
+                ? 'Last complete read loaded. Read again before updating.'
+                : plan.hasChanges
+                  ? 'Changes are ready for the update gate.'
+                  : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
+            </p>
+          )}
 
           <p className="hint">
             {plan.usd.percent === null || plan.eur.percent === null
@@ -255,9 +318,22 @@ export function UpdatePreview({
           </p>
 
           {!readFresh ? (
-            <p className="hint update-read-gate">
+            <p className="hint update-read-gate" id={readGateReasonId}>
               Cashier records are not current. Read again before updating; the values above are the
               last complete read.
+            </p>
+          ) : null}
+
+          {reviewGate ? (
+            <p
+              className={
+                reviewGate.tone === 'stale'
+                  ? 'plan-warnings update-gate'
+                  : 'plan-warnings failure update-gate'
+              }
+              id={reviewGateId}
+            >
+              {reviewGate.message}
             </p>
           ) : null}
 
@@ -265,17 +341,19 @@ export function UpdatePreview({
             <button
               type="button"
               className="button primary"
-              aria-disabled={!readFresh}
-              disabled={
-                readFresh &&
-                (!plan.hasChanges ||
-                  !plan.converter ||
-                  updateState === 'updating' ||
-                  (updateState === 'failed' && updateResult?.restored === false) ||
-                  !onRequestUpdate)
+              aria-disabled={!canReview}
+              aria-describedby={
+                reviewGate
+                  ? reviewGateId
+                  : !readFresh
+                    ? readGateReasonId
+                    : !plan.hasChanges
+                      ? noDiffReasonId
+                      : undefined
               }
+              disabled={updateState === 'updating'}
               onClick={() => {
-                if (!readFresh || !plan.converter) return;
+                if (!canReview || !plan.converter) return;
                 onRequestUpdate({
                   usdRaw: plan.usd.targetRaw,
                   eurRaw: plan.eur.targetRaw,

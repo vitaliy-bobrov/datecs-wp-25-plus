@@ -150,12 +150,17 @@ export function App({ session }: AppProps) {
   const [writeTarget, setWriteTarget] = useState<WriteTarget | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<UpdateTargets | null>(null);
+  const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
   const [idleAcknowledged, setIdleAcknowledged] = useState(false);
 
   useEffect(() => {
     void session.acquireLock();
   }, [session]);
+
+  useEffect(() => {
+    if (!updateOpen) setIdentityConfirmed(false);
+  }, [updateOpen]);
 
   const loadNbp = useCallback(async () => {
     setNbp({ status: 'loading' });
@@ -285,17 +290,26 @@ export function App({ session }: AppProps) {
     print: snapshot.converterRead?.printFlag,
   } satisfies Record<WriteTarget, string | undefined>;
 
+  const nbpStale = nbp.status === 'ready' && nbp.data.stale;
+  const updateBlocked =
+    !readFresh ||
+    nbpStale ||
+    snapshot.updateState === 'failed' ||
+    snapshot.updateState === 'updating';
+
   const requestUpdate = (targets: UpdateTargets) => {
-    if (!readFresh) return;
+    if (updateBlocked) return;
+    setIdentityConfirmed(false);
     setPendingUpdate(targets);
     setUpdateOpen(true);
   };
 
   const confirmUpdate = () => {
     const targets = pendingUpdate;
+    if (!targets || updateBlocked || !identityConfirmed) return;
     setUpdateOpen(false);
     setPendingUpdate(null);
-    if (targets) void session.runFullUpdate(targets);
+    void session.runFullUpdate(targets);
   };
 
   const writeOriginal = writeTarget ? writeRates[writeTarget] : undefined;
@@ -751,6 +765,8 @@ export function App({ session }: AppProps) {
         title="Apply NBP update?"
         confirmLabel="Update cashier"
         confirmTone="primary"
+        confirmDisabled={!identityConfirmed}
+        confirmReason="Confirm this is the cashier at the till to enable Update cashier."
         onConfirm={confirmUpdate}
         onCancel={() => {
           setUpdateOpen(false);
@@ -791,6 +807,17 @@ export function App({ session }: AppProps) {
             </dd>
           </div>
         </dl>
+        <label className="checkline identity-gate">
+          <input
+            type="checkbox"
+            checked={identityConfirmed}
+            onChange={(event) => setIdentityConfirmed(event.target.checked)}
+          />
+          <span>I confirm this is the cashier at the till</span>
+        </label>
+        <p className="hint">
+          The device exposes no distinguishing serial; confirm the physical cashier before updating.
+        </p>
         <p>Do not run this during a sale. The device is checked again before the first write.</p>
       </ConfirmDialog>
 

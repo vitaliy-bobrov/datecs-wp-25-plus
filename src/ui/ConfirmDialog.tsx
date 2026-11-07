@@ -8,6 +8,8 @@ interface ConfirmDialogProps {
   confirmLabel: string;
   confirmTone: ConfirmTone;
   busy?: boolean;
+  confirmDisabled?: boolean;
+  confirmReason?: string;
   children: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
@@ -19,17 +21,26 @@ export function ConfirmDialog({
   confirmLabel,
   confirmTone,
   busy = false,
+  confirmDisabled = false,
+  confirmReason,
   children,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
   const ref = useRef<HTMLDialogElement>(null);
+  const cancelRef = useRef<HTMLButtonElement>(null);
   const titleId = useId();
+  const reasonId = useId();
+  const commitBlocked = busy || confirmDisabled;
+  const reasonVisible = confirmDisabled && confirmReason !== undefined;
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) dialog.showModal();
+    if (open && !dialog.open) {
+      dialog.showModal();
+      cancelRef.current?.focus();
+    }
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
@@ -47,13 +58,29 @@ export function ConfirmDialog({
         <h2 id={titleId}>{title}</h2>
         <div className="modal-body">{children}</div>
         <div className="button-row modal-actions">
-          <button type="button" className="button" onClick={onCancel} disabled={busy}>
+          {reasonVisible ? (
+            <p className="modal-reason" id={reasonId}>
+              {confirmReason}
+            </p>
+          ) : null}
+          <button
+            ref={cancelRef}
+            type="button"
+            className="button"
+            onClick={onCancel}
+            disabled={busy}
+          >
             Cancel
           </button>
           <button
             type="button"
             className={`button ${confirmTone}`}
-            onClick={onConfirm}
+            aria-describedby={reasonVisible ? reasonId : undefined}
+            aria-disabled={commitBlocked || undefined}
+            onClick={() => {
+              if (commitBlocked) return;
+              onConfirm();
+            }}
             disabled={busy}
           >
             {confirmLabel}

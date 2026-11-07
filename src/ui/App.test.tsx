@@ -107,6 +107,15 @@ describe('App read lifecycle', () => {
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Review update/);
   });
 
+  it('requires the physical-cashier identity confirmation before the update commit', () => {
+    const html = renderToStaticMarkup(<App session={sessionFor(base)} />);
+
+    expect(html).toContain('I confirm this is the cashier at the till');
+    expect(html).toContain('The device exposes no distinguishing serial');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Update cashier<\/button>/);
+    expect(html).toContain('Confirm this is the cashier at the till to enable Update cashier.');
+  });
+
   it('keeps the register empty when the first read fails', () => {
     const html = renderToStaticMarkup(
       <App
