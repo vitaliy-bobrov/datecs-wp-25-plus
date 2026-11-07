@@ -3,14 +3,22 @@ import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
 import { errorMessage } from '../domain/nbp';
+import type { CurrencyCode } from '../domain/rates';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { captureDownload, downloadText } from './download';
 import { displayEntries, formatTimestamp, formatUsbIds, stateClass, stateLabel } from './log-view';
 import { NbpPanel, type NbpState } from './NbpPanel';
+import { RateComparison } from './RateComparison';
 
 interface AppProps {
   session: DeviceSession;
+}
+
+function formatRate(value: string | undefined): string {
+  if (!value) return '—';
+  if (!/^\d+$/.test(value)) return value;
+  return `${(Number(value) / 10000).toFixed(4)} (raw ${value})`;
 }
 
 function yesNo(value: string | undefined): string {
@@ -84,6 +92,17 @@ export function App({ session }: AppProps) {
     snapshot.phase !== 'connected';
 
   const entries = useMemo(() => displayEntries(snapshot.capture, 250), [snapshot.capture]);
+  const cashierRates = useMemo(() => {
+    const rates: Partial<Record<CurrencyCode, string>> = {};
+    const read = snapshot.foreignRead;
+    if (read?.slot0Name === 'USD' || read?.slot0Name === 'EUR') {
+      if (read.slot0Rate) rates[read.slot0Name] = read.slot0Rate;
+    }
+    if (read?.slot1Name === 'USD' || read?.slot1Name === 'EUR') {
+      if (read.slot1Rate) rates[read.slot1Name] = read.slot1Rate;
+    }
+    return rates;
+  }, [snapshot.foreignRead]);
   const busy = snapshot.captureState === 'capturing';
 
   const canPreflight = snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
@@ -352,7 +371,7 @@ export function App({ session }: AppProps) {
                 </div>
                 <div>
                   <dt>Slot 0 rate</dt>
-                  <dd>{snapshot.foreignRead.slot0Rate ?? '—'}</dd>
+                  <dd>{formatRate(snapshot.foreignRead.slot0Rate)}</dd>
                 </div>
                 <div>
                   <dt>Slot 1 name</dt>
@@ -360,7 +379,7 @@ export function App({ session }: AppProps) {
                 </div>
                 <div>
                   <dt>Slot 1 rate</dt>
-                  <dd>{snapshot.foreignRead.slot1Rate ?? '—'}</dd>
+                  <dd>{formatRate(snapshot.foreignRead.slot1Rate)}</dd>
                 </div>
                 <div>
                   <dt>Slot 0 full name</dt>
@@ -385,6 +404,8 @@ export function App({ session }: AppProps) {
       </section>
 
       <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
+
+      <RateComparison nbp={nbp} cashier={cashierRates} />
 
       <section className="card logger" aria-labelledby="logger-heading">
         <div className="card-heading">

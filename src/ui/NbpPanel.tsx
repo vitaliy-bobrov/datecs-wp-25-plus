@@ -76,7 +76,7 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
           </dl>
           <p className="hint">
             Source: <a href="https://api.nbp.pl/">Narodowy Bank Polski, table A</a>. Reference only;
-            cashier comparison is unavailable until the read/write epic has hardware evidence.
+            the cashier comparison uses read slot values when available.
           </p>
         </div>
       )}

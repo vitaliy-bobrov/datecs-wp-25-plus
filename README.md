@@ -79,7 +79,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 ## Current scope
 
-Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, reads the confirmed local PLN values, probes the two foreign slots (name, full name, raw rate and Change-after-Z flag) and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF` and no write. The connection reuses the last granted port when available; otherwise it opens the browser picker.
+Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, reads the confirmed local PLN values, reads the two foreign slots (name, full name, four-decimal rate and Change-after-Z flag) and compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF` and no write. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
 The write epic remains gated on a non-production test device or an approved-risk decision. Converter read is not implemented.
 

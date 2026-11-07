@@ -467,3 +467,23 @@ h2 {
   overflow-wrap: anywhere;
   font-size: 0.7rem;
 }
+
+.comparison-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+.card.comparison .comparison-table th,
+.card.comparison .comparison-table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+}
+.card.comparison .comparison-table thead th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+.comparison-table .delta {
+  font-family: var(--mono);
+}

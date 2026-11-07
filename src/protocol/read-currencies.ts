@@ -1,6 +1,8 @@
 import { toHex } from '../domain/capture-log';
 import { bccMatches, sumFromStxToEnq, toAsciiNibble } from './preflight';
 
+const DEVICE_TEXT = new TextDecoder('windows-1250');
+
 type ReadFrameLabel =
   | 'init'
   | 'barcode'
@@ -113,9 +115,9 @@ export function parseReadResponse(input: Uint8Array): ReadResponse | null {
 
   if (!bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))) return null;
 
-  const data = new TextDecoder().decode(frame.slice(firstTab + 1, marker)).replace(/\t+$/, '');
+  const data = DEVICE_TEXT.decode(frame.slice(firstTab + 1, marker)).replace(/\t+$/, '');
   return {
-    header: new TextDecoder().decode(frame.slice(1, firstTab)),
+    header: DEVICE_TEXT.decode(frame.slice(1, firstTab)),
     fields: data ? data.split('\t') : [],
     status: frame.slice(statusStart, enq),
     rawHex: toHex(input),

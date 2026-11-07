@@ -34,6 +34,15 @@ describe('local currency read protocol', () => {
     expect(date?.fields).toEqual(['08-03-24 09:08:05']);
   });
 
+  it('decodes Polish full names from Windows-1250', () => {
+    const fullName = parseReadResponse(
+      response(
+        '1601303034372b30303f3f3009646f6c617220616d6572796b61f1736b69090480808280869a808005303d393503',
+      ),
+    );
+    expect(fullName?.fields).toEqual(['dolar amerykański']);
+  });
+
   it('rejects a corrupted checksum', () => {
     const raw = response('01303033392330303f3f3009504c4e090480808280869a8080053037323403');
     raw[raw.length - 2] = 0x30;
