@@ -18,6 +18,8 @@ import {
   buildConverterRateWrite,
   buildFullNameReadback,
   buildFullNameWrite,
+  buildPrintFlagReadback,
+  buildPrintFlagWrite,
   buildRateReadback,
   buildRateWrite,
   CONVERTER_READ_FRAMES,
@@ -914,8 +916,20 @@ export class DeviceSession {
     );
   }
 
+  async runPrintFlagWriteTest(): Promise<void> {
+    const original = this.snapshot.converterRead?.printFlag;
+    if (original !== '0' && original !== '1') return;
+    await this.executeWriteTest(
+      'converterPrint',
+      original,
+      original === '1' ? '0' : '1',
+      (value, delimiter) => buildPrintFlagWrite(value as '0' | '1', delimiter),
+      buildPrintFlagReadback,
+    );
+  }
+
   private async executeWriteTest(
-    field: 'slot0FullName' | 'slot0Rate' | 'slot1Rate' | 'converterRate',
+    field: 'slot0FullName' | 'slot0Rate' | 'slot1Rate' | 'converterRate' | 'converterPrint',
     original: string,
     temporary: string,
     buildWrite: (value: string, delimiter: number) => Uint8Array | null,

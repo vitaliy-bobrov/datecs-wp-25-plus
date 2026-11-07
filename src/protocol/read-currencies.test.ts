@@ -4,6 +4,8 @@ import { bccMatches, sumFromStxToEnq } from './preflight';
 import {
   buildConverterRateReadback,
   buildConverterRateWrite,
+  buildPrintFlagReadback,
+  buildPrintFlagWrite,
   buildRateReadback,
   buildRateWrite,
   CONVERTER_READ_FRAMES,
@@ -184,5 +186,15 @@ describe('slot and converter rate frames', () => {
     for (const frame of frames) expect(frame.includes(0xff)).toBe(false);
     expect(new TextDecoder().decode(frames[0])).toContain('ExchangeRate\t1\t43956');
     expect(new TextDecoder().decode(frames[2])).toContain('ExchangeRateConvetCurr');
+  });
+});
+
+describe('print converter flag test', () => {
+  it('builds a flag write and readback without 0xFF', () => {
+    const write = buildPrintFlagWrite('0');
+    const readback = buildPrintFlagReadback();
+    expect(write.includes(0xff)).toBe(false);
+    expect(readback.includes(0xff)).toBe(false);
+    expect(new TextDecoder().decode(write)).toContain('PrintConvetCurr');
   });
 });

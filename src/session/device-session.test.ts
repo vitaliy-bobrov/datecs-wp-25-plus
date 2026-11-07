@@ -512,6 +512,36 @@ describe('DeviceSession', () => {
     expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 10);
   });
 
+  it('toggles and restores the print converter flag', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('1', '2'),
+      type2Response('', '3'),
+      type2Response('0', '4'),
+      type2Response('', '5'),
+      type2Response('1', '6'),
+    );
+    await session.runPrintFlagWriteTest();
+
+    expect(session.getSnapshot().writeTestState).toBe('verified');
+    expect(session.getSnapshot().writeTest).toMatchObject({
+      field: 'converterPrint',
+      original: '1',
+      temporary: '0',
+      temporaryReadback: '0',
+      restoredReadback: '1',
+      restored: true,
+    });
+  });
+
   it('fails the local read visibly when no response arrives', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());

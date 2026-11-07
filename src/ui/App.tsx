@@ -3,7 +3,7 @@ import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
 import { errorMessage } from '../domain/nbp';
-import { type CurrencyCode, formatRateValue, parseRawRate } from '../domain/rates';
+import { type CurrencyCode, formatFlag, formatRateValue, parseRawRate } from '../domain/rates';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -13,7 +13,7 @@ import { NbpPanel, type NbpState } from './NbpPanel';
 import { RateComparison } from './RateComparison';
 import { UpdatePreview } from './UpdatePreview';
 
-type WriteTarget = 'usd' | 'eur' | 'converter';
+type WriteTarget = 'usd' | 'eur' | 'converter' | 'print';
 
 function nextRate(value: string): string {
   const last = value.at(-1) ?? '0';
@@ -21,10 +21,19 @@ function nextRate(value: string): string {
   return `${value.slice(0, -1)}${next}`;
 }
 
+function formatTargetValue(target: WriteTarget | null, value: string | undefined): string {
+  return target === 'print' ? formatFlag(value) : formatTestRate(value);
+}
+
+function formatFieldValue(field: string, value: string | undefined): string {
+  return field === 'converterPrint' ? formatFlag(value) : formatTestRate(value);
+}
+
 function writeTargetLabel(target: WriteTarget | null): string {
   if (target === 'usd') return 'USD slot 0 rate';
   if (target === 'eur') return 'EUR slot 1 rate';
   if (target === 'converter') return 'converter rate';
+  if (target === 'print') return 'print converter flag';
   return 'rate';
 }
 
@@ -32,6 +41,7 @@ function writeFieldLabel(field: string): string {
   if (field === 'slot0Rate') return 'USD slot 0 rate';
   if (field === 'slot1Rate') return 'EUR slot 1 rate';
   if (field === 'converterRate') return 'converter rate';
+  if (field === 'converterPrint') return 'print converter flag';
   if (field === 'slot0FullName') return 'slot 0 full name';
   return field;
 }
@@ -188,10 +198,17 @@ export function App({ session }: AppProps) {
     usd: snapshot.foreignRead?.slot0Rate,
     eur: snapshot.foreignRead?.slot1Rate,
     converter: snapshot.converterRead?.rate,
+    print: snapshot.converterRead?.printFlag,
   } satisfies Record<WriteTarget, string | undefined>;
 
   const writeOriginal = writeTarget ? writeRates[writeTarget] : undefined;
-  const writeTemporary = writeOriginal ? nextRate(writeOriginal) : '';
+  const writeTemporary = writeOriginal
+    ? writeTarget === 'print'
+      ? writeOriginal === '1'
+        ? '0'
+        : '1'
+      : nextRate(writeOriginal)
+    : '';
 
   const runWriteTest = (target: WriteTarget) => {
     if (!writeRates[target]) return;
@@ -206,6 +223,7 @@ export function App({ session }: AppProps) {
     if (target === 'usd') void session.runRateWriteTest(0);
     if (target === 'eur') void session.runRateWriteTest(1);
     if (target === 'converter') void session.runConverterRateWriteTest();
+    if (target === 'print') void session.runPrintFlagWriteTest();
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -231,7 +249,7 @@ export function App({ session }: AppProps) {
           <h1>Currency reader</h1>
           <p className="lede">
             Web Serial connection with automatic preflight, foreign-slot and converter reads, NBP
-            comparison and single-rate write tests. No <code>0xFF</code>; no full update or
+            comparison and single-field write tests. No <code>0xFF</code>; no full update or
             multi-field write.
           </p>
         </div>
@@ -346,8 +364,8 @@ export function App({ session }: AppProps) {
               <div>
                 <h2 id="write-test-heading">Rate write tests</h2>
                 <p className="muted">
-                  One field at a time: temporary +1 raw unit, readback, restore, readback. USD, EUR
-                  and converter tests are separate; no names or flags.
+                  One field at a time: temporary +1 raw unit or a flag toggle, readback, restore,
+                  readback. USD, EUR, converter and print-flag tests are separate.
                 </p>
               </div>
               <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
@@ -355,7 +373,7 @@ export function App({ session }: AppProps) {
               </span>
             </div>
             <div className="button-row">
-              {(['usd', 'eur', 'converter'] as const).map((target) => (
+              {(['usd', 'eur', 'converter', 'print'] as const).map((target) => (
                 <button
                   key={target}
                   type="button"
@@ -370,7 +388,9 @@ export function App({ session }: AppProps) {
                 >
                   {snapshot.writeTestState === 'writing'
                     ? 'Writing…'
-                    : `Test ${target === 'usd' ? 'USD' : target === 'eur' ? 'EUR' : 'converter'} rate`}
+                    : target === 'print'
+                      ? 'Test print flag'
+                      : `Test ${target === 'usd' ? 'USD' : target === 'eur' ? 'EUR' : 'converter'} rate`}
                 </button>
               ))}
             </div>
@@ -387,12 +407,18 @@ export function App({ session }: AppProps) {
                 <dt>Converter</dt>
                 <dd>{formatTestRate(writeRates.converter)}</dd>
               </div>
+              <div>
+                <dt>Print converter</dt>
+                <dd>{formatFlag(writeRates.print)}</dd>
+              </div>
             </dl>
             {snapshot.writeTest && !snapshot.writeTest.restored ? (
               <p className="plan-warnings" role="alert">
                 Restore did not verify. The cashier may still hold{` `}
-                <code>{formatTestRate(snapshot.writeTest.temporary)}</code>. Do not run the test
-                again; stop and report the log.
+                <code>
+                  {formatFieldValue(snapshot.writeTest.field, snapshot.writeTest.temporary)}
+                </code>
+                . Do not run the test again; stop and report the log.
               </p>
             ) : null}
             {snapshot.writeTest ? (
@@ -403,11 +429,21 @@ export function App({ session }: AppProps) {
                 </div>
                 <div>
                   <dt>Temporary readback</dt>
-                  <dd>{formatTestRate(snapshot.writeTest.temporaryReadback)}</dd>
+                  <dd>
+                    {formatFieldValue(
+                      snapshot.writeTest.field,
+                      snapshot.writeTest.temporaryReadback,
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>Restored readback</dt>
-                  <dd>{formatTestRate(snapshot.writeTest.restoredReadback)}</dd>
+                  <dd>
+                    {formatFieldValue(
+                      snapshot.writeTest.field,
+                      snapshot.writeTest.restoredReadback,
+                    )}
+                  </dd>
                 </div>
                 <div>
                   <dt>Restored</dt>
@@ -518,7 +554,7 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Read-only records plus explicit USD, EUR and converter single-rate write tests. No full or
+          Read-only records plus explicit USD/EUR/converter rate and print-flag tests. No full or
           multi-field update, and no <code>0xFF</code>.
         </p>
       </footer>
@@ -557,15 +593,15 @@ export function App({ session }: AppProps) {
           </div>
           <div>
             <dt>Current</dt>
-            <dd>{formatTestRate(writeOriginal)}</dd>
+            <dd>{formatTargetValue(writeTarget, writeOriginal)}</dd>
           </div>
           <div>
             <dt>Temporary</dt>
-            <dd>{formatTestRate(writeTemporary)}</dd>
+            <dd>{formatTargetValue(writeTarget, writeTemporary)}</dd>
           </div>
           <div>
             <dt>Restore</dt>
-            <dd>{formatTestRate(writeOriginal)}</dd>
+            <dd>{formatTargetValue(writeTarget, writeOriginal)}</dd>
           </div>
         </dl>
         <p>

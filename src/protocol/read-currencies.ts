@@ -151,6 +151,14 @@ export function buildConverterRateWrite(value: string, delimiter = 0x32): Uint8A
 export function buildConverterRateReadback(delimiter = 0x33): Uint8Array {
   return buildReadQuery('ExchangeRateConvetCurr\t\t\t', delimiter);
 }
+export function buildPrintFlagWrite(value: '0' | '1', delimiter = 0x32): Uint8Array {
+  const data = new TextEncoder().encode(`00??PrintConvetCurr\t\t${value}\t`);
+  return buildFrame(data, delimiter, data.length - 4);
+}
+
+export function buildPrintFlagReadback(delimiter = 0x33): Uint8Array {
+  return buildReadQuery('PrintConvetCurr\t\t\t', delimiter);
+}
 
 export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [
   { label: 'slot0Name', bytes: buildReadQuery('CurrNameForeign\t0\t\t', 0x27) },
