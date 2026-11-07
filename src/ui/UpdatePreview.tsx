@@ -145,6 +145,12 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
             </ul>
           ) : null}
 
+          <p className={plan.hasChanges ? 'hint' : 'empty'}>
+            {plan.hasChanges
+              ? 'Changes are ready for the update gate.'
+              : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
+          </p>
+
           <p className="hint">
             {plan.usd.percent === null || plan.eur.percent === null
               ? 'Difference unavailable for a missing current rate.'

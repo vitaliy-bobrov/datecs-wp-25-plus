@@ -37,6 +37,7 @@ interface PlannedRate {
 }
 
 export interface UpdatePlan {
+  hasChanges: boolean;
   usd: PlannedRate;
   eur: PlannedRate;
   converter?: {
@@ -136,5 +137,14 @@ export function buildUpdatePlan(input: UpdatePlanInput): UpdatePlan | null {
     warnings.push('Print-converter flag will change.');
   }
 
-  return { usd, eur, converter: converterPlan, warnings };
+  const converterChanged =
+    converterPlan !== undefined &&
+    (converter?.rate !== String(converterPlan.targetRaw) ||
+      converter?.printFlag !== converterPlan.printFlag);
+  const hasChanges =
+    (usd.currentRaw !== undefined && usd.currentRaw !== String(usd.targetRaw)) ||
+    (eur.currentRaw !== undefined && eur.currentRaw !== String(eur.targetRaw)) ||
+    converterChanged;
+
+  return { hasChanges, usd, eur, converter: converterPlan, warnings };
 }

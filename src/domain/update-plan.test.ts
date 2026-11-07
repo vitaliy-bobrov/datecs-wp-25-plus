@@ -27,6 +27,7 @@ describe('update preview plan', () => {
       nbp: { USD: '3.9321', EUR: '4.3925' },
       printConverter: true,
     });
+    expect(plan?.hasChanges).toBe(true);
     expect(plan?.usd).toMatchObject({ code: 'USD', currentRaw: '39251', targetRaw: 39321 });
     expect(plan?.eur).toMatchObject({ code: 'EUR', currentRaw: '43955', targetRaw: 43925 });
     expect(plan?.converter).toMatchObject({
@@ -35,6 +36,16 @@ describe('update preview plan', () => {
       printFlag: '1',
       printChanged: false,
     });
+  });
+
+  it('reports no changes when rates, converter and print flag already match', () => {
+    const plan = buildUpdatePlan({
+      foreign: { ...foreign, slot0Rate: '39321', slot1Rate: '43925' },
+      converter: { name: 'USD', rate: '39321', printFlag: '1' },
+      nbp: { USD: '3.9321', EUR: '4.3925' },
+      printConverter: true,
+    });
+    expect(plan?.hasChanges).toBe(false);
   });
 
   it('keeps a missing current rate as unavailable, not zero', () => {
