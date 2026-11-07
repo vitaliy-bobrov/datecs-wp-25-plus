@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { CaptureLog } from './capture-log';
 import type { Clock } from '../ports/clock';
+import { CaptureLog } from './capture-log';
 
 class FixedClock implements Clock {
   nowIso(): string {

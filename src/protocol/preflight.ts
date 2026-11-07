@@ -233,10 +233,19 @@ export function parseResponse(bytes: Uint8Array): ParseOutcome {
   if (type2) frames.push(type2);
 
   if (frames.length === 1) {
-    return { kind: 'valid', frame: frames[0]!, attempts };
+    const frame = frames[0];
+    if (!frame) {
+      return { kind: 'invalid', attempts, reason: 'no candidate validated' };
+    }
+    return { kind: 'valid', frame, attempts };
   }
   if (frames.length > 1) {
-    return { kind: 'ambiguous', frames, attempts, reason: 'both short and long candidates validated' };
+    return {
+      kind: 'ambiguous',
+      frames,
+      attempts,
+      reason: 'both short and long candidates validated',
+    };
   }
   return {
     kind: 'invalid',

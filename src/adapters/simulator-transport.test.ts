@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseResponse } from '../protocol/preflight';
-import { SimulatorTransport, SIMULATOR_PREFLIGHT_RESPONSE } from './simulator-transport';
+import { SIMULATOR_PREFLIGHT_RESPONSE, SimulatorTransport } from './simulator-transport';
 
 describe('SimulatorTransport', () => {
   it('answers the preflight with the exact captured Type2 response', async () => {
@@ -8,7 +8,8 @@ describe('SimulatorTransport', () => {
     const info = await transport.open();
     await transport.write(
       Uint8Array.from([
-        0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f, 0x03,
+        0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f,
+        0x03,
       ]),
     );
     const response = await transport.readChunk(500);

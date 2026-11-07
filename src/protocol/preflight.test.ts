@@ -43,7 +43,8 @@ function shortFrame(data: number[], status: number[], sequence = 0x30, command =
 describe('preflight protocol', () => {
   it('uses the captured preflight frame exactly', () => {
     expect(Array.from(PREFLIGHT_FRAME)).toEqual([
-      0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f, 0x03,
+      0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f,
+      0x03,
     ]);
   });
 
@@ -70,9 +71,10 @@ describe('preflight protocol', () => {
 
   it('parses the real 2026-11-07 Type2 preflight response', () => {
     const raw = Uint8Array.from(
-      '16013030333e203030343a300980808280869a8080090480808280869a808005303a343e03'
-        .match(/../g)!
-        .map((byte) => Number.parseInt(byte, 16)),
+      (
+        '16013030333e203030343a300980808280869a8080090480808280869a808005303a343e03'.match(/../g) ??
+        []
+      ).map((byte) => Number.parseInt(byte, 16)),
     );
     const outcome = parseResponse(raw);
 
@@ -84,7 +86,9 @@ describe('preflight protocol', () => {
     expect(outcome.frame.command).toBe(4);
     expect(outcome.frame.status).toHaveLength(8);
     expect(outcome.frame.secondaryStatus).toHaveLength(8);
-    expect(Array.from(outcome.frame.status)).toEqual([0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80]);
+    expect(Array.from(outcome.frame.status)).toEqual([
+      0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80,
+    ]);
   });
 
   it('rejects a corrupted BCC', () => {

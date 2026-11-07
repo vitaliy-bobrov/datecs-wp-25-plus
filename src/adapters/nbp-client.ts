@@ -1,10 +1,10 @@
 import {
   NbpError,
+  type NbpSnapshot,
   parseNbpTables,
   selectPreviousTable,
   toSnapshot,
   warsawDate,
-  type NbpSnapshot,
 } from '../domain/nbp';
 
 const NBP_URL = 'https://api.nbp.pl/api/exchangerates/tables/A/?format=json';

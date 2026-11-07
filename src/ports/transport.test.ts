@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { toTransportError, TransportError } from './transport';
+import { TransportError, toTransportError } from './transport';
 
 describe('toTransportError', () => {
   it('preserves the browser error name, stage, device and sanitized message', () => {

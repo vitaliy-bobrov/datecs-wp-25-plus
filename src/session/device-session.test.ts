@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { SimulatorTransport } from '../adapters/simulator-transport';
 import { CaptureLog } from '../domain/capture-log';
 import type { DeviceLock } from '../ports/device-lock';
 import type {
@@ -9,7 +10,6 @@ import type {
 } from '../ports/transport';
 import { TransportError } from '../ports/transport';
 import { DeviceSession } from './device-session';
-import { SimulatorTransport } from '../adapters/simulator-transport';
 
 class FixedClock {
   nowIso(): string {
@@ -103,16 +103,20 @@ describe('DeviceSession', () => {
     const lock = new FakeLock();
     const selector: TransportSelector = {
       select: async () => {
-        throw new TransportError('device-unavailable', 'The device is unavailable or disconnected.', {
-          operation: 'webserial.open',
-          stage: 'claim-interface',
-          errorName: 'NetworkError',
-          errorMessage: 'claim failed',
-          device: { label: 'WP-25 Plus', vendorId: 0x1234, productId: 0x5678 },
-          interfaceNumber: 1,
-          alternateSetting: 0,
-          endpointCount: 2,
-        });
+        throw new TransportError(
+          'device-unavailable',
+          'The device is unavailable or disconnected.',
+          {
+            operation: 'webserial.open',
+            stage: 'claim-interface',
+            errorName: 'NetworkError',
+            errorMessage: 'claim failed',
+            device: { label: 'WP-25 Plus', vendorId: 0x1234, productId: 0x5678 },
+            interfaceNumber: 1,
+            alternateSetting: 0,
+            endpointCount: 2,
+          },
+        );
       },
     };
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
@@ -152,13 +156,15 @@ describe('DeviceSession', () => {
 
     await session.acquireLock();
     await session.connect();
-    const transport = selector.last!;
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
     transport.rx.push(Uint8Array.from([0x15]));
     await session.runPreflight();
 
     expect(transport.written).toHaveLength(1);
     expect(Array.from(transport.written[0] ?? [])).toEqual([
-      0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f, 0x03,
+      0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f,
+      0x03,
     ]);
     expect(session.getSnapshot().captureState).toBe('captureOnly');
     expect(session.getSnapshot().preflight?.rawHex).toBe('15');

@@ -1,13 +1,10 @@
-import {
-  TransportError,
-  type DeviceTransport,
-  type TransportInfo,
-} from '../ports/transport';
+import { type DeviceTransport, TransportError, type TransportInfo } from '../ports/transport';
+
+const SIMULATOR_PREFLIGHT_HEX =
+  '16013030333e203030343a300980808280869a8080090480808280869a808005303a343e03';
 
 export const SIMULATOR_PREFLIGHT_RESPONSE = Uint8Array.from(
-  '16013030333e203030343a300980808280869a8080090480808280869a808005303a343e03'
-    .match(/../g)!
-    .map((byte) => Number.parseInt(byte, 16)),
+  (SIMULATOR_PREFLIGHT_HEX.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16)),
 );
 
 export class SimulatorTransport implements DeviceTransport {
@@ -30,10 +27,14 @@ export class SimulatorTransport implements DeviceTransport {
       });
     }
     if (bytes[3] === 0xff) {
-      throw new TransportError('unsupported', 'The simulator does not accept programming commands.', {
-        operation: 'simulator.write',
-        stage: 'write',
-      });
+      throw new TransportError(
+        'unsupported',
+        'The simulator does not accept programming commands.',
+        {
+          operation: 'simulator.write',
+          stage: 'write',
+        },
+      );
     }
     this.sent = true;
   }

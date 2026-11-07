@@ -1,9 +1,9 @@
 import {
-  TransportError,
-  toTransportError,
   type DeviceTransport,
   type TransportDeviceDetail,
+  TransportError,
   type TransportInfo,
+  toTransportError,
 } from '../ports/transport';
 
 export class WebSerialTransport implements DeviceTransport {
@@ -48,11 +48,15 @@ export class WebSerialTransport implements DeviceTransport {
       });
 
       if (!this.port.readable || !this.port.writable) {
-        throw new TransportError('unsupported', 'The serial port has no readable or writable stream.', {
-          operation: 'webserial.open',
-          stage: 'streams',
-          device: this.deviceDetail(),
-        });
+        throw new TransportError(
+          'unsupported',
+          'The serial port has no readable or writable stream.',
+          {
+            operation: 'webserial.open',
+            stage: 'streams',
+            device: this.deviceDetail(),
+          },
+        );
       }
 
       this.reader = this.port.readable.getReader();

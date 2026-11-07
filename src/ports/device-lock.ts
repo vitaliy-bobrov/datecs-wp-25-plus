@@ -7,8 +7,7 @@ export interface DeviceLock {
 const LOCK_NAME = 'datecs-wp25-device';
 
 export class BrowserDeviceLock implements DeviceLock {
-  readonly supported =
-    typeof navigator !== 'undefined' && typeof navigator.locks !== 'undefined';
+  readonly supported = typeof navigator !== 'undefined' && typeof navigator.locks !== 'undefined';
 
   private held = false;
 

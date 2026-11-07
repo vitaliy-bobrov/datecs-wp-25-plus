@@ -1,12 +1,12 @@
-import { SimulatorTransport } from './simulator-transport';
-import { WebSerialTransport } from './webserial-transport';
 import {
-  TransportError,
-  toTransportError,
   type DeviceTransport,
+  TransportError,
   type TransportKind,
   type TransportSelector,
+  toTransportError,
 } from '../ports/transport';
+import { SimulatorTransport } from './simulator-transport';
+import { WebSerialTransport } from './webserial-transport';
 
 export class BrowserTransportSelector implements TransportSelector {
   async select(kind: TransportKind): Promise<DeviceTransport> {

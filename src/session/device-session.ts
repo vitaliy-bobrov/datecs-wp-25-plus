@@ -1,16 +1,15 @@
-import type { CaptureEntry } from '../domain/capture-log';
-import type { CaptureLog } from '../domain/capture-log';
+import type { CaptureEntry, CaptureLog } from '../domain/capture-log';
 import { toHex } from '../domain/capture-log';
 import type { DeviceLock } from '../ports/device-lock';
 import {
-  toTransportError,
-  TransportError,
   type DeviceTransport,
+  TransportError,
   type TransportErrorCode,
   type TransportErrorDetail,
   type TransportInfo,
   type TransportKind,
   type TransportSelector,
+  toTransportError,
 } from '../ports/transport';
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
 
@@ -196,7 +195,11 @@ export class DeviceSession {
 
   async runPreflight(): Promise<void> {
     const transport = this.transport;
-    if (this.snapshot.phase !== 'connected' || !transport || this.snapshot.captureState === 'capturing') {
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.captureState === 'capturing'
+    ) {
       return;
     }
 

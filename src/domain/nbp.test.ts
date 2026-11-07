@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  NbpError,
   ageInCalendarDays,
+  NbpError,
+  type NbpTable,
   parseNbpTables,
   selectPreviousTable,
   toSnapshot,
   warsawDate,
-  type NbpTable,
 } from './nbp';
 
 const tables: NbpTable[] = [
@@ -57,13 +57,17 @@ describe('NBP reference', () => {
   });
 
   it('marks a table older than seven calendar days as stale', () => {
+    const table = tables[0];
+    if (!table) throw new Error('Test table is missing.');
     expect(ageInCalendarDays('2026-11-20', '2026-11-06')).toBe(14);
-    expect(toSnapshot(tables[0]!, '2026-11-20', '2026-11-20T12:00:00.000Z').stale).toBe(true);
-    expect(toSnapshot(tables[0]!, '2026-11-07', '2026-11-07T12:00:00.000Z').stale).toBe(false);
+    expect(toSnapshot(table, '2026-11-20', '2026-11-20T12:00:00.000Z').stale).toBe(true);
+    expect(toSnapshot(table, '2026-11-07', '2026-11-07T12:00:00.000Z').stale).toBe(false);
   });
 
   it('rejects malformed JSON and missing currencies', () => {
     expect(() => parseNbpTables('{')).toThrow(NbpError);
-    expect(() => parseNbpTables(JSON.stringify([{ effectiveDate: '2026-11-06', rates: [] }]))).toThrow(NbpError);
+    expect(() =>
+      parseNbpTables(JSON.stringify([{ effectiveDate: '2026-11-06', rates: [] }])),
+    ).toThrow(NbpError);
   });
 });

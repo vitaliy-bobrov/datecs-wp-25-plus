@@ -48,7 +48,9 @@ export function warsawDate(now: Date): string {
 function dayNumber(date: string): number {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
   if (!match) throw new Error(`Invalid date: ${date}`);
-  return Math.floor(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000);
+  return Math.floor(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])) / 86_400_000,
+  );
 }
 
 export function ageInCalendarDays(today: string, effectiveDate: string): number {
@@ -57,7 +59,9 @@ export function ageInCalendarDays(today: string, effectiveDate: string): number 
 
 export function selectPreviousTable(tables: NbpTable[], today: string): NbpTable | null {
   const eligible = tables
-    .filter((table) => /^\d{4}-\d{2}-\d{2}$/.test(table.effectiveDate) && table.effectiveDate < today)
+    .filter(
+      (table) => /^\d{4}-\d{2}-\d{2}$/.test(table.effectiveDate) && table.effectiveDate < today,
+    )
     .sort((left, right) => right.effectiveDate.localeCompare(left.effectiveDate));
   return eligible[0] ?? null;
 }
@@ -73,7 +77,10 @@ export function parseNbpTables(raw: string): NbpTable[] {
     throw new NbpError('malformed', 'The NBP response is not a table array.');
   }
 
-  const rawMids = Array.from(raw.matchAll(/"mid"\s*:\s*(\d+(?:\.\d+)?)/g), (match) => match[1] ?? '');
+  const rawMids = Array.from(
+    raw.matchAll(/"mid"\s*:\s*(\d+(?:\.\d+)?)/g),
+    (match) => match[1] ?? '',
+  );
   let midIndex = 0;
   const tables: NbpTable[] = [];
   for (const item of parsed) {
@@ -90,7 +97,7 @@ export function parseNbpTables(raw: string): NbpTable[] {
       midIndex += 1;
       if (rate.code !== 'USD' && rate.code !== 'EUR') continue;
       if (typeof rate.currency !== 'string') continue;
-      const mid = typeof rate.mid === 'string' ? rate.mid : rawMid ?? '';
+      const mid = typeof rate.mid === 'string' ? rate.mid : (rawMid ?? '');
       if (!/^\d+(?:\.\d+)?$/.test(mid)) continue;
       rates.push({ code: rate.code, currency: rate.currency, mid });
     }

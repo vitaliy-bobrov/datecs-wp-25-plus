@@ -1,0 +1,19 @@
+{
+  "threshold": 3,
+  "min-tokens": 50,
+  "reporters": [
+    "console"
+  ],
+  "format": [
+    "typescript",
+    "tsx"
+  ],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/*.test.ts",
+    "**/coverage/**",
+    "**/package-lock.json"
+  ],
+  "absolute": false
+}

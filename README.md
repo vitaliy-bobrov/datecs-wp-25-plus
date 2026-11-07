@@ -35,6 +35,19 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 
 No Docker USB passthrough is used. The DSH/container environment is for building and tests only; hardware access belongs to the host browser. WebUSB is intentionally dropped: on macOS the serial driver owns interface 0 and `claimInterface` fails. Web Serial is the only supported path.
 
+## Quality gates
+
+```bash
+npm run typecheck   # tsc --noEmit
+npm run lint        # Biome lint + format check
+npm run dupes       # jscpd duplication threshold
+npm test            # Vitest
+npm run build       # typecheck + Vite production build
+npm run check       # all of the above except build
+```
+
+GitHub Actions runs `npm ci`, then typecheck, Biome, jscpd, tests and build before deploying. The duplication threshold is 3%; tests and generated files are excluded.
+
 ## Current scope
 
 Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, captures and validates the I90 Type2 response, and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`, currency read or write.

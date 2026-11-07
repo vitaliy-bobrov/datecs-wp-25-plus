@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
-import { errorMessage, type NbpSnapshot } from '../domain/nbp';
 import type { CaptureEntry } from '../domain/capture-log';
-import type { DeviceSession, SessionSnapshot } from '../session/device-session';
+import { errorMessage, type NbpSnapshot } from '../domain/nbp';
 import type { TransportKind } from '../ports/transport';
+import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { downloadText } from './download';
 
 interface AppProps {
@@ -29,7 +29,8 @@ function formatTime(iso: string): string {
 function entrySummary(entry: CaptureEntry): string {
   let summary: string;
   if (entry.kind === 'error') summary = entry.message ?? entry.code ?? 'Error';
-  else if (entry.kind === 'connect') summary = `Connected${entry.device ? `: ${entry.device}` : ''}`;
+  else if (entry.kind === 'connect')
+    summary = `Connected${entry.device ? `: ${entry.device}` : ''}`;
   else if (entry.kind === 'disconnect') summary = 'Disconnected';
   else if (entry.kind === 'session') summary = entry.message ?? 'Session';
   else summary = entry.message ?? entry.kind;
@@ -54,7 +55,11 @@ function lockMessage(state: SessionSnapshot['lockState']): string {
 }
 
 export function App({ session }: AppProps) {
-  const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
+  const snapshot = useSyncExternalStore(
+    session.subscribe,
+    session.getSnapshot,
+    session.getSnapshot,
+  );
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
 
@@ -62,18 +67,18 @@ export function App({ session }: AppProps) {
     void session.acquireLock();
   }, [session]);
 
-  const loadNbp = async () => {
+  const loadNbp = useCallback(async () => {
     setNbp({ status: 'loading' });
     try {
       setNbp({ status: 'ready', data: await nbpClient.fetchPreviousRates() });
     } catch (error) {
       setNbp({ status: 'error', message: errorMessage(error) });
     }
-  };
+  }, []);
 
   useEffect(() => {
     void loadNbp();
-  }, []);
+  }, [loadNbp]);
 
   const canConnect =
     snapshot.lockState === 'held' &&
@@ -82,8 +87,7 @@ export function App({ session }: AppProps) {
 
   const entries = useMemo(() => [...snapshot.capture].reverse().slice(0, 250), [snapshot.capture]);
 
-  const canPreflight =
-    snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
+  const canPreflight = snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
 
   const connect = (kind: TransportKind) => {
     void session.connect(kind);
@@ -92,7 +96,11 @@ export function App({ session }: AppProps) {
   const download = (format: 'jsonl' | 'text') => {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     if (format === 'jsonl') {
-      downloadText(`datecs-wp25-capture-${stamp}.jsonl`, session.captureJsonl(), 'application/x-ndjson');
+      downloadText(
+        `datecs-wp25-capture-${stamp}.jsonl`,
+        session.captureJsonl(),
+        'application/x-ndjson',
+      );
     } else {
       downloadText(`datecs-wp25-capture-${stamp}.txt`, session.captureText(), 'text/plain');
     }
@@ -114,7 +122,8 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Capture shell</h1>
           <p className="lede">
-            Read-only Web Serial or simulator connection, preflight capture, Type2 logger and NBP reference. This build sends only the known preflight — no currency read or write.
+            Read-only Web Serial or simulator connection, preflight capture, Type2 logger and NBP
+            reference. This build sends only the known preflight — no currency read or write.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -138,7 +147,11 @@ export function App({ session }: AppProps) {
                 className="button primary"
                 onClick={() => connect('webserial')}
                 disabled={!canConnect || !supportsWebSerial()}
-                title={supportsWebSerial() ? 'Select the cashier with Web Serial' : 'Web Serial is unavailable'}
+                title={
+                  supportsWebSerial()
+                    ? 'Select the cashier with Web Serial'
+                    : 'Web Serial is unavailable'
+                }
               >
                 Connect Web Serial
               </button>
@@ -161,7 +174,8 @@ export function App({ session }: AppProps) {
               </button>
             </div>
             <p className="hint">
-              Web Serial is the only hardware transport. The simulator is an explicit test path; nothing is auto-selected.
+              Web Serial is the only hardware transport. The simulator is an explicit test path;
+              nothing is auto-selected.
             </p>
           </div>
 
@@ -199,7 +213,8 @@ export function App({ session }: AppProps) {
           <div>
             <h2 id="preflight-heading">Preflight</h2>
             <p className="muted">
-              Sends the captured short preflight; raw response capture only. No <code>0xFF</code>, currency read or write.
+              Sends the captured short preflight; raw response capture only. No <code>0xFF</code>,
+              currency read or write.
             </p>
           </div>
           <span className={`state state-${snapshot.captureState}`}>{snapshot.captureState}</span>
@@ -222,7 +237,9 @@ export function App({ session }: AppProps) {
               <strong>{snapshot.preflight.status}</strong>
               {snapshot.preflight.mode ? ` · ${snapshot.preflight.mode} frame` : ''}
               {snapshot.preflight.statusHex ? ` · status ${snapshot.preflight.statusHex}` : ''}
-              {snapshot.preflight.secondaryStatusHex ? ` · status2 ${snapshot.preflight.secondaryStatusHex}` : ''}
+              {snapshot.preflight.secondaryStatusHex
+                ? ` · status2 ${snapshot.preflight.secondaryStatusHex}`
+                : ''}
               {snapshot.preflight.reason ? ` · ${snapshot.preflight.reason}` : ''}
             </p>
             {snapshot.preflight.rawHex ? (
@@ -244,7 +261,9 @@ export function App({ session }: AppProps) {
             <p className="muted">Table A · USD/EUR · previous business day · in-memory only</p>
           </div>
           <div className="button-row compact">
-            {nbp.status === 'ready' && nbp.data.stale ? <span className="state state-failed">stale</span> : null}
+            {nbp.status === 'ready' && nbp.data.stale ? (
+              <span className="state state-failed">stale</span>
+            ) : null}
             <button
               type="button"
               className="button"
@@ -257,17 +276,22 @@ export function App({ session }: AppProps) {
         </div>
 
         {nbp.status === 'loading' ? (
-          <p className="empty" aria-live="polite">Loading NBP table A…</p>
+          <p className="empty" aria-live="polite">
+            Loading NBP table A…
+          </p>
         ) : nbp.status === 'error' ? (
           <div className="nbp-error" role="alert">
             <p>{nbp.message}</p>
-            <button type="button" className="button" onClick={() => void loadNbp()}>Retry</button>
+            <button type="button" className="button" onClick={() => void loadNbp()}>
+              Retry
+            </button>
           </div>
         ) : (
           <div aria-live="polite">
             <p className="nbp-meta">
               Effective <strong>{nbp.data.table.effectiveDate}</strong>
-              {' · '}{nbp.data.ageDays} calendar day{nbp.data.ageDays === 1 ? '' : 's'} old
+              {' · '}
+              {nbp.data.ageDays} calendar day{nbp.data.ageDays === 1 ? '' : 's'} old
               {nbp.data.stale ? ' · previous table is stale' : ''}
             </p>
             <dl className="rates">
@@ -283,7 +307,8 @@ export function App({ session }: AppProps) {
               })}
             </dl>
             <p className="hint">
-              Reference only. Cashier comparison is unavailable until the read/write epic has hardware evidence.
+              Reference only. Cashier comparison is unavailable until the read/write epic has
+              hardware evidence.
             </p>
           </div>
         )}
@@ -293,21 +318,43 @@ export function App({ session }: AppProps) {
         <div className="card-heading">
           <div>
             <h2 id="logger-heading">Logger</h2>
-            <p className="muted">
-              {snapshot.capture.length} entries · in memory only · no network
-            </p>
+            <p className="muted">{snapshot.capture.length} entries · in memory only · no network</p>
           </div>
           <div className="button-row compact">
-            <button type="button" className="button" onClick={() => session.clearCapture()} disabled={snapshot.capture.length === 0}>
+            <button
+              type="button"
+              className="button"
+              onClick={() => session.clearCapture()}
+              disabled={snapshot.capture.length === 0}
+            >
               Clear
             </button>
-            <button type="button" className="button" onClick={() => void copy()} disabled={snapshot.capture.length === 0}>
-              {copyState === 'copied' ? 'Copied' : copyState === 'failed' ? 'Copy failed' : 'Copy text'}
+            <button
+              type="button"
+              className="button"
+              onClick={() => void copy()}
+              disabled={snapshot.capture.length === 0}
+            >
+              {copyState === 'copied'
+                ? 'Copied'
+                : copyState === 'failed'
+                  ? 'Copy failed'
+                  : 'Copy text'}
             </button>
-            <button type="button" className="button" onClick={() => download('jsonl')} disabled={snapshot.capture.length === 0}>
+            <button
+              type="button"
+              className="button"
+              onClick={() => download('jsonl')}
+              disabled={snapshot.capture.length === 0}
+            >
               Download JSONL
             </button>
-            <button type="button" className="button" onClick={() => download('text')} disabled={snapshot.capture.length === 0}>
+            <button
+              type="button"
+              className="button"
+              onClick={() => download('text')}
+              disabled={snapshot.capture.length === 0}
+            >
               Download text
             </button>
           </div>
@@ -351,7 +398,8 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Web Serial or simulator preflight capture only. No currency read, 0xFF or write is implemented.
+          Web Serial or simulator preflight capture only. No currency read, 0xFF or write is
+          implemented.
         </p>
       </footer>
     </main>
