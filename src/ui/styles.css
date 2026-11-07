@@ -184,3 +184,28 @@ h2 { font-size: 1.18rem; }
   .connection-grid { grid-template-columns: 1fr; }
   .button-row.compact { justify-content: flex-start; }
 }
+
+.preflight-result {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+.preflight-result p { margin: 0 0 10px; line-height: 1.45; }
+.preflight-result p:last-child { margin-bottom: 0; }
+.raw {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  font-size: 0.82rem;
+}
+.raw span { color: var(--muted); }
+.raw code {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+  color: var(--accent);
+}
+.state-captured { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.state-captureOnly { color: #8a5a00; background: color-mix(in srgb, #b7791f 16%, transparent); }
+.state-failed { color: var(--danger); background: color-mix(in srgb, var(--danger) 12%, transparent); }
+.state-capturing { color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }

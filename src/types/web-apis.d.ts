@@ -1,54 +1,3 @@
-interface WebUsbDeviceFilter {
-  vendorId?: number;
-  productId?: number;
-  classCode?: number;
-  subclassCode?: number;
-  protocolCode?: number;
-}
-
-interface WebUsbEndpoint {
-  endpointNumber: number;
-  direction: 'in' | 'out';
-  type: 'bulk' | 'interrupt' | 'isochronous';
-}
-
-interface WebUsbAlternate {
-  alternateSetting: number;
-  endpoints: WebUsbEndpoint[];
-}
-
-interface WebUsbInterface {
-  interfaceNumber: number;
-  alternates: WebUsbAlternate[];
-  claimed?: boolean;
-}
-
-interface WebUsbConfiguration {
-  configurationValue: number;
-  interfaces: WebUsbInterface[];
-}
-
-interface WebUsbDevice {
-  vendorId: number;
-  productId: number;
-  productName?: string;
-  manufacturerName?: string;
-  serialNumber?: string;
-  configuration: WebUsbConfiguration | null;
-  configurations: WebUsbConfiguration[];
-  open(): Promise<void>;
-  close(): Promise<void>;
-  forget?(): Promise<void>;
-  selectConfiguration(value: number): Promise<void>;
-  claimInterface(interfaceNumber: number): Promise<void>;
-  releaseInterface(interfaceNumber: number): Promise<void>;
-  selectAlternateInterface(interfaceNumber: number, alternateSetting: number): Promise<void>;
-}
-
-interface WebUsbManager {
-  requestDevice(options: { filters: WebUsbDeviceFilter[] }): Promise<WebUsbDevice>;
-}
-
 interface WebSerialPortInfo {
   usbVendorId?: number;
   usbProductId?: number;
@@ -90,7 +39,6 @@ interface WebLocksManager {
 }
 
 interface Navigator {
-  readonly usb?: WebUsbManager;
   readonly serial?: WebSerialManager;
   readonly locks?: WebLocksManager;
 }

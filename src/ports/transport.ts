@@ -1,4 +1,4 @@
-export type TransportKind = 'webusb' | 'webserial';
+export type TransportKind = 'webserial';
 
 export type TransportErrorCode =
   | 'unsupported'
@@ -9,6 +9,7 @@ export type TransportErrorCode =
   | 'close-failed'
   | 'device-in-use'
   | 'locks-unavailable'
+  | 'timeout'
   | 'unknown';
 
 export interface TransportDeviceDetail {
@@ -125,6 +126,7 @@ export function toTransportError(
     'close-failed': 'The device did not close cleanly.',
     'device-in-use': 'Another tab already owns the device session.',
     'locks-unavailable': 'This browser cannot guarantee a single device session.',
+    timeout: 'The device did not respond in time.',
     unknown: 'An unexpected device error occurred.',
   };
 

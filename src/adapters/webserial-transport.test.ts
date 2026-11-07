@@ -6,6 +6,12 @@ class FakePort implements WebSerialPort {
   closed = false;
   forgot = false;
   openFailure: unknown = null;
+  readable = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.close();
+    },
+  });
+  writable = new WritableStream<Uint8Array>();
 
   getInfo(): WebSerialPortInfo {
     return { usbVendorId: 0x1234, usbProductId: 0x5678 };

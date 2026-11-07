@@ -4,7 +4,7 @@ import { toTransportError, TransportError } from './transport';
 describe('toTransportError', () => {
   it('preserves the browser error name, stage, device and sanitized message', () => {
     const raw = new DOMException('claim failed at /dev/bus/usb/001/002', 'NetworkError');
-    const error = toTransportError(raw, 'webusb.open', {
+    const error = toTransportError(raw, 'webserial.open', {
       stage: 'claim-interface',
       device: { label: 'WP-25 Plus', vendorId: 0x1234, productId: 0x5678 },
       interfaceNumber: 1,
@@ -13,7 +13,7 @@ describe('toTransportError', () => {
     });
 
     expect(error.code).toBe('device-unavailable');
-    expect(error.detail?.operation).toBe('webusb.open');
+    expect(error.detail?.operation).toBe('webserial.open');
     expect(error.detail?.stage).toBe('claim-interface');
     expect(error.detail?.errorName).toBe('NetworkError');
     expect(error.detail?.errorMessage).toContain('<path>');

@@ -26,7 +26,7 @@ describe('CaptureLog', () => {
     log.append({
       kind: 'connect',
       direction: 'rx',
-      transport: 'webusb',
+      transport: 'webserial',
       device: 'WP-25 Plus',
       bytes: new Uint8Array([0x01, 0x30, 0xff]),
       message: 'Connected',
@@ -36,7 +36,7 @@ describe('CaptureLog', () => {
     expect(entry?.bytesHex).toBe('0130ff');
     expect(entry?.ts).toBe('2026-11-06T08:00:00.000Z');
     expect(log.toJsonl()).toContain('"bytesHex":"0130ff"');
-    expect(log.toText()).toContain('webusb\tWP-25 Plus\trx');
+    expect(log.toText()).toContain('webserial\tWP-25 Plus\trx');
   });
 
   it('keeps staged error diagnostics in text and JSONL', () => {

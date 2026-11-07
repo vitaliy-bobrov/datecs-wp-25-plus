@@ -7,6 +7,10 @@ import {
 } from '../ports/transport';
 
 export class WebSerialTransport implements DeviceTransport {
+  private reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  private pendingRead: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
+
   constructor(private readonly port: WebSerialPort) {}
 
   private deviceDetail(): TransportDeviceDetail {
@@ -42,7 +46,23 @@ export class WebSerialTransport implements DeviceTransport {
         parity: 'none',
         flowControl: 'none',
       });
+
+      if (!this.port.readable || !this.port.writable) {
+        throw new TransportError('unsupported', 'The serial port has no readable or writable stream.', {
+          operation: 'webserial.open',
+          stage: 'streams',
+          device: this.deviceDetail(),
+        });
+      }
+
+      this.reader = this.port.readable.getReader();
+      this.writer = this.port.writable.getWriter();
     } catch (error) {
+      try {
+        await this.port.close();
+      } catch {
+        // Keep the original diagnostic.
+      }
       throw toTransportError(error, 'webserial.open', {
         operation: 'webserial.open',
         stage: 'port.open',
@@ -57,7 +77,104 @@ export class WebSerialTransport implements DeviceTransport {
     return this.info();
   }
 
+  async write(bytes: Uint8Array): Promise<void> {
+    if (!this.writer) {
+      throw new TransportError('device-unavailable', 'The serial port is not open.', {
+        operation: 'webserial.write',
+        stage: 'write',
+        device: this.deviceDetail(),
+      });
+    }
+    try {
+      await this.writer.write(bytes);
+    } catch (error) {
+      throw toTransportError(error, 'webserial.write', {
+        operation: 'webserial.write',
+        stage: 'write',
+        device: this.deviceDetail(),
+      });
+    }
+  }
+
+  async readChunk(timeoutMs: number): Promise<Uint8Array> {
+    if (!this.reader) {
+      throw new TransportError('device-unavailable', 'The serial port is not open.', {
+        operation: 'webserial.read',
+        stage: 'read',
+        device: this.deviceDetail(),
+      });
+    }
+
+    if (!this.pendingRead) {
+      this.pendingRead = this.reader.read();
+    }
+    const pending = this.pendingRead;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const timeout = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new TransportError('timeout', 'The device did not respond in time.', {
+            operation: 'webserial.read',
+            stage: 'read',
+            device: this.deviceDetail(),
+          }),
+        );
+      }, timeoutMs);
+    });
+
+    try {
+      const result = await Promise.race([pending, timeout]);
+      this.pendingRead = null;
+      if (result.done) {
+        throw new TransportError('device-unavailable', 'The serial stream ended.', {
+          operation: 'webserial.read',
+          stage: 'read',
+          device: this.deviceDetail(),
+        });
+      }
+      return result.value ?? new Uint8Array();
+    } catch (error) {
+      if (error instanceof TransportError && error.code === 'timeout') {
+        throw error;
+      }
+      this.pendingRead = null;
+      throw toTransportError(error, 'webserial.read', {
+        operation: 'webserial.read',
+        stage: 'read',
+        device: this.deviceDetail(),
+      });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  async flushInput(): Promise<void> {
+    // Reads are drained by the capture loop; no extra command is sent.
+  }
+
   async close(): Promise<void> {
+    try {
+      await this.reader?.cancel();
+    } catch {
+      // The stream may already be closed.
+    }
+
+    try {
+      this.reader?.releaseLock();
+    } catch {
+      // Ignore lock release errors during teardown.
+    }
+    this.reader = null;
+    this.pendingRead = null;
+
+    try {
+      this.writer?.releaseLock();
+    } catch {
+      // Ignore lock release errors during teardown.
+    }
+    this.writer = null;
+
     try {
       await this.port.close();
       await this.port.forget?.();
@@ -68,25 +185,5 @@ export class WebSerialTransport implements DeviceTransport {
         device: this.deviceDetail(),
       });
     }
-  }
-
-  async write(_bytes: Uint8Array): Promise<void> {
-    throw new TransportError('unsupported', 'Device commands are not enabled in this story.', {
-      operation: 'webserial.write',
-      stage: 'write',
-      device: this.deviceDetail(),
-    });
-  }
-
-  async readChunk(_timeoutMs: number): Promise<Uint8Array> {
-    throw new TransportError('unsupported', 'Device reads are not enabled in this story.', {
-      operation: 'webserial.read',
-      stage: 'read',
-      device: this.deviceDetail(),
-    });
-  }
-
-  async flushInput(): Promise<void> {
-    // No device commands are sent in this story.
   }
 }

@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — capture shell
 
-Initial shell plus transport diagnostics: a deployable Vite/React/TypeScript app with Web Serial as the working transport, WebUSB as an experimental option, and a local logger. It sends **no device command** — no preflight, currency read, NBP request or write yet.
+Web Serial-only capture shell: a deployable Vite/React/TypeScript app with connection diagnostics, the known short preflight and a raw preflight logger. It sends no currency read, NBP request or write.
 
 ## Develop
 
@@ -27,13 +27,15 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 ## Host smoke test
 
 1. Open the Pages URL on the host.
-2. Choose **Connect with Web Serial** (the working transport). WebUSB is experimental.
+2. Choose **Connect Web Serial**. WebUSB is not supported.
 3. Select the cashier, confirm the connected state, then disconnect.
 4. Download the JSONL and/or text log.
-5. Confirm the log contains only connection lifecycle entries and no command bytes.
+5. Connect, run the preflight, and download the JSONL/text. The log must contain the exact preflight tx and raw response (or timeout/control result), with no currency read or write.
 
-No Docker USB passthrough is used. The DSH/container environment is for building and tests only; hardware access belongs to the host browser. On 2026-11-07 WebUSB failed with `device-unavailable`; Web Serial connected. The logger now records enough detail to diagnose the WebUSB failure on the next retest.
+No Docker USB passthrough is used. The DSH/container environment is for building and tests only; hardware access belongs to the host browser. WebUSB is intentionally dropped: on macOS the serial driver owns interface 0 and `claimInterface` fails. Web Serial is the only supported path.
 
 ## Current scope
 
-The read-only protocol work (known preflight, raw capture, strict frame validation and NBP display) is the next story. The read/write epic remains gated on real hardware evidence.
+Web Serial only. The app connects, sends the exact short preflight, captures the raw response, attempts strict short/long frame validation and marks anything ambiguous as `captureOnly`. It sends no `0xFF`, currency read, NBP request or write.
+
+The next step is analysing the hardware response; the read/write epic remains gated on real evidence.

@@ -35,29 +35,37 @@ class FakeLock implements DeviceLock {
 class FakeTransport implements DeviceTransport {
   opened = false;
   closed = false;
+  written: Uint8Array[] = [];
+  rx: Uint8Array[] = [];
 
   async open(): Promise<TransportInfo> {
     this.opened = true;
-    return { kind: 'webusb', label: 'Fake WP-25 Plus', vendorId: 0x1234, productId: 0x5678 };
+    return { kind: 'webserial', label: 'Fake WP-25 Plus', vendorId: 0x1234, productId: 0x5678 };
   }
 
   async close(): Promise<void> {
     this.closed = true;
   }
 
-  async write(_bytes: Uint8Array): Promise<void> {
-    throw new TransportError('unsupported', 'not used');
+  async write(bytes: Uint8Array): Promise<void> {
+    this.written.push(bytes);
   }
 
   async readChunk(_timeoutMs: number): Promise<Uint8Array> {
-    throw new TransportError('unsupported', 'not used');
+    const next = this.rx.shift();
+    if (next) return next;
+    throw new TransportError('timeout', 'no response');
   }
 
   async flushInput(): Promise<void> {}
 }
 
 class FakeSelector implements TransportSelector {
-  readonly select = vi.fn(async (_kind: TransportKind) => new FakeTransport());
+  last?: FakeTransport;
+  readonly select = vi.fn(async (_kind: TransportKind) => {
+    this.last = new FakeTransport();
+    return this.last;
+  });
 }
 
 describe('DeviceSession', () => {
@@ -67,9 +75,9 @@ describe('DeviceSession', () => {
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
 
     await session.acquireLock();
-    await session.connect('webusb');
+    await session.connect();
 
-    expect(selector.select).toHaveBeenCalledWith('webusb');
+    expect(selector.select).toHaveBeenCalledWith('webserial');
     expect(session.getSnapshot().phase).toBe('connected');
     expect(session.getSnapshot().info?.label).toBe('Fake WP-25 Plus');
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'connect')).toBe(true);
@@ -83,7 +91,7 @@ describe('DeviceSession', () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
 
-    await session.connect('webusb');
+    await session.connect();
 
     expect(selector.select).not.toHaveBeenCalled();
     expect(session.getSnapshot().phase).toBe('error');
@@ -95,7 +103,7 @@ describe('DeviceSession', () => {
     const selector: TransportSelector = {
       select: async () => {
         throw new TransportError('device-unavailable', 'The device is unavailable or disconnected.', {
-          operation: 'webusb.open',
+          operation: 'webserial.open',
           stage: 'claim-interface',
           errorName: 'NetworkError',
           errorMessage: 'claim failed',
@@ -109,7 +117,7 @@ describe('DeviceSession', () => {
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
 
     await session.acquireLock();
-    await session.connect('webusb');
+    await session.connect();
 
     expect(session.getSnapshot().error?.detail?.stage).toBe('claim-interface');
     expect(session.getSnapshot().error?.detail?.errorName).toBe('NetworkError');
@@ -129,11 +137,32 @@ describe('DeviceSession', () => {
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
 
     await session.acquireLock();
-    await session.connect('webserial');
+    await session.connect();
 
     expect(session.getSnapshot().phase).toBe('error');
     expect(session.getSnapshot().error?.code).toBe('cancelled');
     expect(session.getSnapshot().capture.at(-1)?.kind).toBe('error');
+  });
+
+  it('sends the exact preflight and preserves a capture-only response', async () => {
+    const lock = new FakeLock();
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last!;
+    transport.rx.push(Uint8Array.from([0x15]));
+    await session.runPreflight();
+
+    expect(transport.written).toHaveLength(1);
+    expect(Array.from(transport.written[0] ?? [])).toEqual([
+      0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f, 0x03,
+    ]);
+    expect(session.getSnapshot().captureState).toBe('captureOnly');
+    expect(session.getSnapshot().preflight?.rawHex).toBe('15');
+    expect(session.getSnapshot().capture.some((entry) => entry.kind === 'tx')).toBe(true);
+    expect(session.getSnapshot().capture.some((entry) => entry.kind === 'rx')).toBe(true);
   });
 
   it('reports an unavailable lock', async () => {
@@ -143,7 +172,7 @@ describe('DeviceSession', () => {
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
 
     await session.acquireLock();
-    await session.connect('webusb');
+    await session.connect();
 
     expect(session.getSnapshot().lockState).toBe('unavailable');
     expect(session.getSnapshot().error?.code).toBe('locks-unavailable');

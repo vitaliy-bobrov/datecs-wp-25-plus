@@ -1,20 +1,12 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
-import { supportsTransport } from '../app/capabilities';
+import { supportsWebSerial } from '../app/capabilities';
 import type { CaptureEntry } from '../domain/capture-log';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
-import type { TransportKind } from '../ports/transport';
 import { downloadText } from './download';
 
 interface AppProps {
   session: DeviceSession;
 }
-
-const TRANSPORT_LABEL: Record<TransportKind, string> = {
-  webusb: 'WebUSB (experimental)',
-  webserial: 'Web Serial',
-};
-
-const TRANSPORTS: TransportKind[] = ['webserial', 'webusb'];
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -63,8 +55,11 @@ export function App({ session }: AppProps) {
 
   const entries = useMemo(() => [...snapshot.capture].reverse().slice(0, 250), [snapshot.capture]);
 
-  const connect = (kind: TransportKind) => {
-    void session.connect(kind);
+  const canPreflight =
+    snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
+
+  const connect = () => {
+    void session.connect();
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -92,7 +87,7 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Capture shell</h1>
           <p className="lede">
-            Read-only connection smoke test and local logger. Web Serial is the working transport; WebUSB is experimental. This build sends no device command.
+            Read-only Web Serial connection, preflight capture and local logger. This build sends only the known preflight — no currency read or write.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -109,23 +104,17 @@ export function App({ session }: AppProps) {
 
         <div className="connection-grid">
           <div>
-            <p className="label">Select a transport</p>
+            <p className="label">Device transport</p>
             <div className="button-row">
-              {TRANSPORTS.map((kind) => {
-                const supported = supportsTransport(kind);
-                return (
-                  <button
-                    key={kind}
-                    type="button"
-                    className={`button${kind === 'webserial' ? ' primary' : ''}`}
-                    onClick={() => connect(kind)}
-                    disabled={!canConnect || !supported}
-                    title={supported ? `Select a device using ${TRANSPORT_LABEL[kind]}` : `${TRANSPORT_LABEL[kind]} is unavailable`}
-                  >
-                    Connect with {TRANSPORT_LABEL[kind]}
-                  </button>
-                );
-              })}
+              <button
+                type="button"
+                className="button primary"
+                onClick={connect}
+                disabled={!canConnect || !supportsWebSerial()}
+                title={supportsWebSerial() ? 'Select the cashier with Web Serial' : 'Web Serial is unavailable'}
+              >
+                Connect Web Serial
+              </button>
               <button
                 type="button"
                 className="button"
@@ -136,14 +125,14 @@ export function App({ session }: AppProps) {
               </button>
             </div>
             <p className="hint">
-              Web Serial is the working transport. WebUSB is experimental; neither is auto-selected.
+              Web Serial is the only supported transport. No WebUSB, driver or auto-selection path.
             </p>
           </div>
 
           <dl className="facts">
             <div>
               <dt>Transport</dt>
-              <dd>{snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : '—'}</dd>
+              <dd>{snapshot.transportKind ? 'Web Serial' : '—'}</dd>
             </div>
             <div>
               <dt>Device</dt>
@@ -162,11 +151,53 @@ export function App({ session }: AppProps) {
 
         <div className="status" role="status" aria-live="polite">
           {snapshot.phase === 'connected'
-            ? `Connected via ${snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : 'device'}.`
+            ? 'Connected via Web Serial.'
             : snapshot.error
               ? `${snapshot.error.message}${snapshot.error.detail?.stage ? ` (${snapshot.error.detail.stage}${snapshot.error.detail.errorName ? `, ${snapshot.error.detail.errorName}` : ''})` : ''}`
               : lockMessage(snapshot.lockState)}
         </div>
+      </section>
+
+      <section className="card preflight" aria-labelledby="preflight-heading">
+        <div className="card-heading">
+          <div>
+            <h2 id="preflight-heading">Preflight</h2>
+            <p className="muted">
+              Sends the captured short preflight; raw response capture only. No <code>0xFF</code>, currency read or write.
+            </p>
+          </div>
+          <span className={`state state-${snapshot.captureState}`}>{snapshot.captureState}</span>
+        </div>
+
+        <div className="button-row">
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => void session.runPreflight()}
+            disabled={!canPreflight}
+          >
+            {snapshot.captureState === 'capturing' ? 'Capturing…' : 'Run preflight'}
+          </button>
+        </div>
+
+        {snapshot.preflight ? (
+          <div className="preflight-result" aria-live="polite">
+            <p>
+              <strong>{snapshot.preflight.status}</strong>
+              {snapshot.preflight.mode ? ` · ${snapshot.preflight.mode} frame` : ''}
+              {snapshot.preflight.statusHex ? ` · status ${snapshot.preflight.statusHex}` : ''}
+              {snapshot.preflight.reason ? ` · ${snapshot.preflight.reason}` : ''}
+            </p>
+            {snapshot.preflight.rawHex ? (
+              <p className="raw">
+                <span>Raw response</span>
+                <code>{snapshot.preflight.rawHex}</code>
+              </p>
+            ) : null}
+          </div>
+        ) : (
+          <p className="empty">No preflight yet. Connect first, then run it.</p>
+        )}
       </section>
 
       <section className="card logger" aria-labelledby="logger-heading">
@@ -214,7 +245,7 @@ export function App({ session }: AppProps) {
                   <tr key={entry.id}>
                     <td className="mono nowrap">{formatTime(entry.ts)}</td>
                     <td>{entry.kind}</td>
-                    <td>{entry.transport ? TRANSPORT_LABEL[entry.transport] : '—'}</td>
+                    <td>{entry.transport ? 'Web Serial' : '—'}</td>
                     <td>{entry.device ?? '—'}</td>
                     <td className="mono bytes">{entry.bytesHex ?? '—'}</td>
                     <td>
@@ -231,7 +262,7 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Read-only capture foundation. No preflight, currency read, NBP request or write is part of this story.
+          Web Serial preflight capture only. No currency read, 0xFF, NBP request or write is implemented.
         </p>
       </footer>
     </main>

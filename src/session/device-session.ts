@@ -1,5 +1,6 @@
 import type { CaptureEntry } from '../domain/capture-log';
 import type { CaptureLog } from '../domain/capture-log';
+import { toHex } from '../domain/capture-log';
 import type { DeviceLock } from '../ports/device-lock';
 import {
   toTransportError,
@@ -11,14 +12,24 @@ import {
   type TransportKind,
   type TransportSelector,
 } from '../ports/transport';
+import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
 
 export type SessionPhase = 'idle' | 'connecting' | 'connected' | 'error';
 export type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable';
+export type CaptureState = 'idle' | 'capturing' | 'captured' | 'captureOnly' | 'failed';
 
 export interface SessionError {
   code: TransportErrorCode | 'unknown';
   message: string;
   detail?: TransportErrorDetail;
+}
+
+export interface PreflightResult {
+  status: 'captured' | 'captureOnly' | 'failed';
+  mode?: 'short' | 'long';
+  statusHex?: string;
+  rawHex?: string;
+  reason?: string;
 }
 
 export interface SessionSnapshot {
@@ -27,6 +38,8 @@ export interface SessionSnapshot {
   transportKind?: TransportKind;
   info?: TransportInfo;
   error?: SessionError;
+  captureState: CaptureState;
+  preflight?: PreflightResult;
   capture: readonly CaptureEntry[];
 }
 
@@ -39,6 +52,7 @@ const PUBLIC_ERROR: Record<TransportErrorCode, string> = {
   'close-failed': 'The device did not close cleanly.',
   'device-in-use': 'Another tab already owns the device session.',
   'locks-unavailable': 'This browser cannot guarantee a single device session.',
+  timeout: 'The device did not respond in time.',
   unknown: 'An unexpected device error occurred.',
 };
 
@@ -50,10 +64,18 @@ function environmentDetail(): TransportErrorDetail {
   };
 }
 
+function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+  const merged = new Uint8Array(left.length + right.length);
+  merged.set(left);
+  merged.set(right, left.length);
+  return merged;
+}
+
 export class DeviceSession {
   private snapshot: SessionSnapshot = {
     phase: 'idle',
     lockState: 'idle',
+    captureState: 'idle',
     capture: [],
   };
 
@@ -86,7 +108,7 @@ export class DeviceSession {
     this.set({ lockState: this.lock.supported ? 'in-use' : 'unavailable' });
   }
 
-  async connect(kind: TransportKind): Promise<void> {
+  async connect(): Promise<void> {
     if (this.snapshot.phase === 'connecting' || this.snapshot.phase === 'connected') return;
 
     if (this.snapshot.lockState !== 'held') {
@@ -103,26 +125,32 @@ export class DeviceSession {
     }
 
     const environment = environmentDetail();
-    this.set({ phase: 'connecting', transportKind: kind, error: undefined });
+    this.set({
+      phase: 'connecting',
+      transportKind: 'webserial',
+      captureState: 'idle',
+      preflight: undefined,
+      error: undefined,
+    });
     this.append({
       kind: 'session',
-      transport: kind,
+      transport: 'webserial',
       message: 'Connecting',
       detail: environment as Record<string, unknown>,
     });
 
     try {
-      const transport = await this.selector.select(kind);
+      const transport = await this.selector.select('webserial');
       const info = await transport.open();
       this.transport = transport;
       this.set({
         phase: 'connected',
-        transportKind: kind,
+        transportKind: 'webserial',
         info,
       });
       this.append({
         kind: 'connect',
-        transport: kind,
+        transport: 'webserial',
         device: info.label,
         message: 'Connected',
         detail: { ...info, ...environment },
@@ -155,7 +183,131 @@ export class DeviceSession {
     }
 
     this.append({ kind: 'disconnect', message: 'Disconnected' });
-    this.set({ phase: 'idle', info: undefined, transportKind: undefined, error: undefined });
+    this.set({
+      phase: 'idle',
+      info: undefined,
+      transportKind: undefined,
+      error: undefined,
+      captureState: 'idle',
+      preflight: undefined,
+    });
+  }
+
+  async runPreflight(): Promise<void> {
+    const transport = this.transport;
+    if (this.snapshot.phase !== 'connected' || !transport || this.snapshot.captureState === 'capturing') {
+      return;
+    }
+
+    const environment = environmentDetail();
+    this.set({ captureState: 'capturing', preflight: undefined });
+    this.append({
+      kind: 'tx',
+      direction: 'tx',
+      transport: 'webserial',
+      bytes: PREFLIGHT_FRAME,
+      message: 'Preflight tx',
+      detail: environment as Record<string, unknown>,
+    });
+
+    try {
+      await transport.write(PREFLIGHT_FRAME);
+    } catch (error) {
+      this.failPreflight(toTransportError(error, 'preflight.write'), environment);
+      return;
+    }
+
+    let raw: Uint8Array = new Uint8Array();
+    const deadline = Date.now() + 500;
+
+    while (Date.now() < deadline) {
+      const remaining = Math.max(1, deadline - Date.now());
+      try {
+        const chunk = await transport.readChunk(remaining);
+        if (chunk.length === 0) continue;
+        raw = concatBytes(raw, chunk);
+        this.append({
+          kind: 'rx',
+          direction: 'rx',
+          transport: 'webserial',
+          bytes: chunk,
+          message: 'Preflight rx',
+          detail: environment as Record<string, unknown>,
+        });
+        if (parseResponse(raw).kind === 'valid') break;
+        if (raw.length > 512) break;
+      } catch (error) {
+        const transportError = toTransportError(error, 'preflight.read');
+        if (transportError.code === 'timeout') break;
+        this.failPreflight(transportError, environment);
+        return;
+      }
+    }
+
+    if (raw.length === 0) {
+      const detail = {
+        operation: 'preflight.read',
+        stage: 'timeout',
+        ...environment,
+      };
+      this.append({
+        kind: 'error',
+        code: 'timeout',
+        message: 'No preflight response within 500 ms.',
+        stage: 'timeout',
+        detail: detail as Record<string, unknown>,
+      });
+      this.set({
+        captureState: 'failed',
+        preflight: { status: 'failed', reason: 'No response within 500 ms' },
+      });
+      return;
+    }
+
+    const outcome = parseResponse(raw);
+    if (outcome.kind === 'valid') {
+      const result: PreflightResult = {
+        status: 'captured',
+        mode: outcome.frame.mode,
+        statusHex: toHex(outcome.frame.status),
+        rawHex: toHex(raw),
+      };
+      this.append({
+        kind: 'info',
+        transport: 'webserial',
+        message: `Preflight captured (${outcome.frame.mode})`,
+        detail: {
+          mode: outcome.frame.mode,
+          statusHex: result.statusHex,
+          rawHex: result.rawHex,
+          attempts: outcome.attempts,
+          ...environment,
+        },
+      });
+      this.set({ captureState: 'captured', preflight: result });
+      return;
+    }
+
+    const reason = outcome.kind === 'ambiguous' ? outcome.reason : outcome.reason;
+    this.append({
+      kind: 'info',
+      transport: 'webserial',
+      message: 'Preflight capture-only',
+      detail: {
+        reason,
+        rawHex: toHex(raw),
+        attempts: outcome.attempts,
+        ...environment,
+      },
+    });
+    this.set({
+      captureState: 'captureOnly',
+      preflight: {
+        status: 'captureOnly',
+        rawHex: toHex(raw),
+        reason,
+      },
+    });
   }
 
   clearCapture(): void {
@@ -163,6 +315,8 @@ export class DeviceSession {
     this.snapshot = {
       ...this.snapshot,
       capture: this.capture.snapshot(),
+      captureState: 'idle',
+      preflight: undefined,
     };
     this.emit();
   }
@@ -173,6 +327,22 @@ export class DeviceSession {
 
   captureText(): string {
     return this.capture.toText();
+  }
+
+  private failPreflight(error: TransportError, environment: TransportErrorDetail): void {
+    this.append({
+      kind: 'error',
+      code: error.code,
+      message: PUBLIC_ERROR[error.code],
+      stage: error.detail?.stage,
+      errorName: error.detail?.errorName,
+      errorMessage: error.detail?.errorMessage,
+      detail: { ...environment, ...error.detail } as Record<string, unknown>,
+    });
+    this.set({
+      captureState: 'failed',
+      preflight: { status: 'failed', reason: PUBLIC_ERROR[error.code] },
+    });
   }
 
   private fail(error: TransportError): void {
