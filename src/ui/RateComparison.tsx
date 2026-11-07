@@ -44,11 +44,16 @@ export function RateComparison({
   });
   const readTime = formatReadTime(readAt);
   const badge = refreshing ? (
-    <span className="state state-refreshing">Refreshing</span>
+    <span className="state state-refreshing">
+      <span className="settle" key="refreshing">
+        Refreshing
+      </span>
+    </span>
   ) : !readFresh && hasCashier ? (
     <span className="state state-last-read">
-      Last read
-      {readTime ? <span className="state-note">{readTime}</span> : null}
+      <span className="settle" key={`last-read-${readTime}`}>
+        Last read {readTime ? <span className="state-note">{readTime}</span> : null}
+      </span>
     </span>
   ) : null;
 
@@ -86,8 +91,16 @@ export function RateComparison({
               {rows.map(({ code, mid, cashierValue, result }) => (
                 <tr key={code}>
                   <th scope="row">{code}</th>
-                  <td>{cashierValue === null ? 'not read' : formatRateValue(cashierValue)}</td>
-                  <td>{mid ?? 'n/a'}</td>
+                  <td>
+                    <span className="settle" key={cashierValue === null ? 'none' : cashierValue}>
+                      {cashierValue === null ? 'not read' : formatRateValue(cashierValue)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="settle" key={mid ?? 'n/a'}>
+                      {mid ?? 'n/a'}
+                    </span>
+                  </td>
                   <td
                     className={[
                       'delta',
@@ -96,19 +109,24 @@ export function RateComparison({
                       .filter(Boolean)
                       .join(' ')}
                   >
-                    {result ? (
-                      <>
-                        <span className="sr-only">
-                          {differenceDescription(result.difference, result.percent)}
-                        </span>
-                        <span aria-hidden="true">
-                          {formatSignedRate(result.difference)} ·{' '}
-                          {formatSignedPercent(result.percent)}
-                        </span>
-                      </>
-                    ) : (
-                      '—'
-                    )}
+                    <span
+                      className="settle"
+                      key={result ? `${result.difference}-${result.percent}` : 'no-difference'}
+                    >
+                      {result ? (
+                        <>
+                          <span className="sr-only">
+                            {differenceDescription(result.difference, result.percent)}
+                          </span>
+                          <span aria-hidden="true">
+                            {formatSignedRate(result.difference)} ·{' '}
+                            {formatSignedPercent(result.percent)}
+                          </span>
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -121,28 +139,41 @@ export function RateComparison({
                 <h3 className="record-title">{code}</h3>
                 <dl className="record-list">
                   <dt>Cashier rate</dt>
-                  <dd>{cashierValue === null ? 'not read' : formatRateValue(cashierValue)}</dd>
+                  <dd>
+                    <span className="settle" key={cashierValue === null ? 'none' : cashierValue}>
+                      {cashierValue === null ? 'not read' : formatRateValue(cashierValue)}
+                    </span>
+                  </dd>
                   <dt>NBP reference</dt>
-                  <dd>{mid ?? 'n/a'}</dd>
+                  <dd>
+                    <span className="settle" key={mid ?? 'n/a'}>
+                      {mid ?? 'n/a'}
+                    </span>
+                  </dd>
                   <dt>Difference vs NBP</dt>
                   <dd
                     className={
                       result ? `delta-${differenceTone(result.difference) ?? 'flat'}` : undefined
                     }
                   >
-                    {result ? (
-                      <>
-                        <span className="sr-only">
-                          {differenceDescription(result.difference, result.percent)}
-                        </span>
-                        <span aria-hidden="true">
-                          {formatSignedRate(result.difference)} ·{' '}
-                          {formatSignedPercent(result.percent)}
-                        </span>
-                      </>
-                    ) : (
-                      '—'
-                    )}
+                    <span
+                      className="settle"
+                      key={result ? `${result.difference}-${result.percent}` : 'no-difference'}
+                    >
+                      {result ? (
+                        <>
+                          <span className="sr-only">
+                            {differenceDescription(result.difference, result.percent)}
+                          </span>
+                          <span aria-hidden="true">
+                            {formatSignedRate(result.difference)} ·{' '}
+                            {formatSignedPercent(result.percent)}
+                          </span>
+                        </>
+                      ) : (
+                        '—'
+                      )}
+                    </span>
                   </dd>
                 </dl>
               </article>

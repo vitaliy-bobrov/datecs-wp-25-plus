@@ -139,10 +139,20 @@ export function UpdatePreview({
                 return (
                   <tr key={row.key}>
                     <th scope="row">{row.label}</th>
-                    <td>{row.current === null ? '—' : formatRateValue(row.current)}</td>
-                    <td>{formatRateValue(row.target)}</td>
+                    <td>
+                      <span className="settle" key={row.current === null ? 'none' : row.current}>
+                        {row.current === null ? '—' : formatRateValue(row.current)}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="settle" key={row.target}>
+                        {formatRateValue(row.target)}
+                      </span>
+                    </td>
                     <td className={changeTone(row.current, row.target)}>
-                      {change === null ? '—' : formatSignedRate(change)}
+                      <span className="settle" key={change ?? 'none'}>
+                        {change === null ? '—' : formatSignedRate(change)}
+                      </span>
                     </td>
                   </tr>
                 );
@@ -158,12 +168,22 @@ export function UpdatePreview({
                   <h3 className="record-title">{row.label}</h3>
                   <dl className="record-list">
                     <dt>{currentLabel}</dt>
-                    <dd>{row.current === null ? '—' : formatRateValue(row.current)}</dd>
+                    <dd>
+                      <span className="settle" key={row.current === null ? 'none' : row.current}>
+                        {row.current === null ? '—' : formatRateValue(row.current)}
+                      </span>
+                    </dd>
                     <dt>Update to</dt>
-                    <dd>{formatRateValue(row.target)}</dd>
+                    <dd>
+                      <span className="settle" key={row.target}>
+                        {formatRateValue(row.target)}
+                      </span>
+                    </dd>
                     <dt>Change</dt>
                     <dd className={changeTone(row.current, row.target)}>
-                      {change === null ? '—' : formatSignedRate(change)}
+                      <span className="settle" key={change ?? 'none'}>
+                        {change === null ? '—' : formatSignedRate(change)}
+                      </span>
                     </dd>
                   </dl>
                 </article>
@@ -175,8 +195,10 @@ export function UpdatePreview({
             <div>
               <dt>Print currency converter after update</dt>
               <dd>
-                {printCurrent ?? '—'} → {printTarget}
-                {printChange ? ` · ${printChange}` : ''}
+                <span className="settle" key={`${printCurrent ?? 'none'}-${printTarget}`}>
+                  {printCurrent ?? '—'} → {printTarget}
+                  {printChange ? ` · ${printChange}` : ''}
+                </span>
               </dd>
             </div>
           </dl>

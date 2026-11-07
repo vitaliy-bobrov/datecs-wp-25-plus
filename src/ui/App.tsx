@@ -224,6 +224,7 @@ export function App({ session }: AppProps) {
   const statusError = snapshot.error?.message ?? readError;
   const statusIsReadFailure = snapshot.error === undefined && readFailed;
   const displayState = consoleState(snapshot);
+  const displayStateLabel = stateLabel(displayState);
 
   const clearCapture = () => {
     if (!deviceBusy) setClearOpen(true);
@@ -348,7 +349,7 @@ export function App({ session }: AppProps) {
           </div>
           <div className="rail-right">
             <span className={`lamp lamp-${stateClass(displayState)}`} aria-hidden="true" />
-            <span>{stateLabel(displayState)}</span>
+            <span>{displayStateLabel}</span>
             <span className="rail-version">v{__APP_VERSION__}</span>
           </div>
         </header>
@@ -360,15 +361,23 @@ export function App({ session }: AppProps) {
               <p
                 className={`lcd-state${displayState === 'error' || displayState === 'failed' ? ' lcd-state-failure' : ''}`}
               >
-                {stateLabel(displayState)}
+                <span className="settle" key={displayState}>
+                  {displayStateLabel}
+                </span>
               </p>
               <p className="lcd-rates">
                 <span className="lcd-label">Cashier</span>
                 <span>
-                  USD <strong>{formatCashierRate(cashierRates.USD)}</strong>
+                  USD{' '}
+                  <strong className="settle" key={cashierRates.USD ?? 'none'}>
+                    {formatCashierRate(cashierRates.USD)}
+                  </strong>
                 </span>
                 <span>
-                  EUR <strong>{formatCashierRate(cashierRates.EUR)}</strong>
+                  EUR{' '}
+                  <strong className="settle" key={cashierRates.EUR ?? 'none'}>
+                    {formatCashierRate(cashierRates.EUR)}
+                  </strong>
                 </span>
               </p>
             </div>
@@ -381,7 +390,9 @@ export function App({ session }: AppProps) {
                 <p className="muted">{lockMessage(snapshot.lockState)}</p>
               </div>
               <span className={`state state-${stateClass(displayState)}`}>
-                {stateLabel(displayState)}
+                <span className="settle" key={displayState}>
+                  {displayStateLabel}
+                </span>
               </span>
             </div>
 
@@ -535,7 +546,9 @@ export function App({ session }: AppProps) {
                     </p>
                   </div>
                   <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
-                    {stateLabel(snapshot.writeTestState)}
+                    <span className="settle" key={snapshot.writeTestState}>
+                      {stateLabel(snapshot.writeTestState)}
+                    </span>
                   </span>
                 </div>
                 <div className="panel-body foreign-probe write-test">
