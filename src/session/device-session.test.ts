@@ -381,13 +381,6 @@ describe('DeviceSession', () => {
     queueReadFlow(transport);
     await runReadFlow(session);
 
-    expect(session.getSnapshot().localRead).toMatchObject({
-      barcode: '1',
-      localName: 'PLN',
-      currencyDate: '08-03-24 09:08:05',
-      pgmLocalName: 'PLN',
-      pgmCurrencyDate: '26-13-36 30:31:59',
-    });
     expect(session.getSnapshot().foreignRead).toMatchObject({
       slot0Name: 'USD',
       slot0Rate: '39251',

@@ -46,15 +46,6 @@ interface PreflightResult {
 
 type ReadState = 'idle' | 'reading' | 'read' | 'failed';
 
-interface LocalReadResult {
-  barcode?: string;
-  localName?: string;
-  currencyDate?: string;
-  pgmLocalName?: string;
-  pgmCurrencyDate?: string;
-  rawFrames?: string[];
-}
-
 type ForeignReadState = 'idle' | 'reading' | 'read' | 'failed';
 
 type ConverterReadState = 'idle' | 'reading' | 'read' | 'failed';
@@ -101,7 +92,6 @@ export interface SessionSnapshot {
   converterReadState: ConverterReadState;
   writeTestState: WriteTestState;
   preflight?: PreflightResult;
-  localRead?: LocalReadResult;
   foreignRead?: ForeignReadResult;
   converterRead?: ConverterReadResult;
   writeTest?: WriteTestResult;
@@ -215,7 +205,6 @@ export class DeviceSession {
       converterReadState: 'idle',
       writeTestState: 'idle',
       preflight: undefined,
-      localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
@@ -317,7 +306,6 @@ export class DeviceSession {
       converterReadState: 'idle',
       writeTestState: 'idle',
       preflight: undefined,
-      localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
@@ -357,7 +345,6 @@ export class DeviceSession {
       converterReadState: 'idle',
       writeTestState: 'idle',
       preflight: undefined,
-      localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
@@ -554,7 +541,6 @@ export class DeviceSession {
       foreignReadState: 'idle',
       converterReadState: 'idle',
       writeTestState: 'idle',
-      localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
@@ -574,39 +560,16 @@ export class DeviceSession {
       return;
     }
 
-    const local: LocalReadResult = { rawFrames: [] };
-    for (const { label, parsed } of results) {
-      local.rawFrames?.push(parsed.rawHex);
-      const value = parsed.fields[0];
-      if (value === undefined) continue;
-      switch (label) {
-        case 'barcode':
-          local.barcode = value;
-          break;
-        case 'localName':
-          local.localName = value;
-          break;
-        case 'currencyDate':
-          local.currencyDate = value;
-          break;
-        case 'pgmLocalName':
-          local.pgmLocalName = value;
-          break;
-        case 'pgmCurrencyDate':
-          local.pgmCurrencyDate = value;
-          break;
-        default:
-          break;
-      }
-    }
-
     this.append({
       kind: 'info',
       transport: transportKind,
-      message: 'Local currency values read',
-      detail: { ...local, ...environment } as Record<string, unknown>,
+      message: 'Local read bootstrap complete',
+      detail: {
+        rawFrames: results.map((result) => result.parsed.rawHex),
+        ...environment,
+      },
     });
-    this.set({ readState: 'read', localRead: local });
+    this.set({ readState: 'read' });
   }
 
   async runReadForeign(): Promise<void> {
@@ -1108,7 +1071,6 @@ export class DeviceSession {
       converterReadState: 'idle',
       writeTestState: 'idle',
       preflight: undefined,
-      localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
