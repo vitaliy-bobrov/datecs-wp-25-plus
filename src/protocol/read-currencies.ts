@@ -134,13 +134,22 @@ export function buildFullNameWrite(value: string, delimiter = 0x32): Uint8Array 
 export function buildFullNameReadback(delimiter = 0x33): Uint8Array {
   return buildReadQuery('CurrFullNameForeign\t0\t\t', delimiter);
 }
-export function buildRateWrite(value: string, delimiter = 0x32): Uint8Array {
-  const data = new TextEncoder().encode(`00??ExchangeRate\t0\t${value}\t`);
+export function buildRateWrite(value: string, delimiter = 0x32, index = 0): Uint8Array {
+  const data = new TextEncoder().encode(`00??ExchangeRate\t${index}\t${value}\t`);
   return buildFrame(data, delimiter, data.length - 4);
 }
 
-export function buildRateReadback(delimiter = 0x33): Uint8Array {
-  return buildReadQuery('ExchangeRate\t0\t\t', delimiter);
+export function buildRateReadback(delimiter = 0x33, index = 0): Uint8Array {
+  return buildReadQuery(`ExchangeRate\t${index}\t\t`, delimiter);
+}
+
+export function buildConverterRateWrite(value: string, delimiter = 0x32): Uint8Array {
+  const data = new TextEncoder().encode(`00??ExchangeRateConvetCurr\t\t${value}\t`);
+  return buildFrame(data, delimiter, data.length - 4);
+}
+
+export function buildConverterRateReadback(delimiter = 0x33): Uint8Array {
+  return buildReadQuery('ExchangeRateConvetCurr\t\t\t', delimiter);
 }
 
 export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [

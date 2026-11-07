@@ -13,6 +13,29 @@ import { NbpPanel, type NbpState } from './NbpPanel';
 import { RateComparison } from './RateComparison';
 import { UpdatePreview } from './UpdatePreview';
 
+type WriteTarget = 'usd' | 'eur' | 'converter';
+
+function nextRate(value: string): string {
+  const last = value.at(-1) ?? '0';
+  const next = last === '9' ? '8' : String(Number(last) + 1);
+  return `${value.slice(0, -1)}${next}`;
+}
+
+function writeTargetLabel(target: WriteTarget | null): string {
+  if (target === 'usd') return 'USD slot 0 rate';
+  if (target === 'eur') return 'EUR slot 1 rate';
+  if (target === 'converter') return 'converter rate';
+  return 'rate';
+}
+
+function writeFieldLabel(field: string): string {
+  if (field === 'slot0Rate') return 'USD slot 0 rate';
+  if (field === 'slot1Rate') return 'EUR slot 1 rate';
+  if (field === 'converterRate') return 'converter rate';
+  if (field === 'slot0FullName') return 'slot 0 full name';
+  return field;
+}
+
 interface AppProps {
   session: DeviceSession;
 }
@@ -84,6 +107,7 @@ export function App({ session }: AppProps) {
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [clearOpen, setClearOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
+  const [writeTarget, setWriteTarget] = useState<WriteTarget | null>(null);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
 
   useEffect(() => {
@@ -160,21 +184,28 @@ export function App({ session }: AppProps) {
     }
   };
 
-  const writeOriginal = snapshot.foreignRead?.slot0Rate;
-  const writeTemporary = writeOriginal
-    ? `${writeOriginal.slice(0, -1)}${
-        writeOriginal.at(-1) === '9' ? '8' : String(Number(writeOriginal.at(-1)) + 1)
-      }`
-    : '';
+  const writeRates = {
+    usd: snapshot.foreignRead?.slot0Rate,
+    eur: snapshot.foreignRead?.slot1Rate,
+    converter: snapshot.converterRead?.rate,
+  } satisfies Record<WriteTarget, string | undefined>;
 
-  const runWriteTest = () => {
-    if (!writeOriginal) return;
+  const writeOriginal = writeTarget ? writeRates[writeTarget] : undefined;
+  const writeTemporary = writeOriginal ? nextRate(writeOriginal) : '';
+
+  const runWriteTest = (target: WriteTarget) => {
+    if (!writeRates[target]) return;
+    setWriteTarget(target);
     setWriteOpen(true);
   };
 
   const confirmWriteTest = () => {
+    const target = writeTarget;
     setWriteOpen(false);
-    void session.runRateWriteTest();
+    setWriteTarget(null);
+    if (target === 'usd') void session.runRateWriteTest(0);
+    if (target === 'eur') void session.runRateWriteTest(1);
+    if (target === 'converter') void session.runConverterRateWriteTest();
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -200,7 +231,7 @@ export function App({ session }: AppProps) {
           <h1>Currency reader</h1>
           <p className="lede">
             Web Serial connection with automatic preflight, foreign-slot and converter reads, NBP
-            comparison and a single-rate write test. No <code>0xFF</code>; no full update or
+            comparison and single-rate write tests. No <code>0xFF</code>; no full update or
             multi-field write.
           </p>
         </div>
@@ -313,34 +344,50 @@ export function App({ session }: AppProps) {
           <div className="foreign-probe write-test">
             <div className="card-heading">
               <div>
-                <h2 id="write-test-heading">Single-rate write test</h2>
+                <h2 id="write-test-heading">Rate write tests</h2>
                 <p className="muted">
-                  Writes only the slot 0 exchange rate: temporary +1 raw unit, readback, restore,
-                  readback. One field, two writes, no names, flags or converter values.
+                  One field at a time: temporary +1 raw unit, readback, restore, readback. USD, EUR
+                  and converter tests are separate; no names or flags.
                 </p>
               </div>
               <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
                 {stateLabel(snapshot.writeTestState)}
               </span>
             </div>
-            <button
-              type="button"
-              className="button"
-              onClick={runWriteTest}
-              disabled={
-                !snapshot.converterRead ||
-                snapshot.readState !== 'read' ||
-                deviceBusy ||
-                !snapshot.foreignRead?.slot0Rate
-              }
-            >
-              {snapshot.writeTestState === 'writing' ? 'Writing…' : 'Run single-rate write test'}
-            </button>
-            {writeOriginal ? (
-              <p className="muted test-value">
-                Current USD rate: <code>{formatTestRate(writeOriginal)}</code>
-              </p>
-            ) : null}
+            <div className="button-row">
+              {(['usd', 'eur', 'converter'] as const).map((target) => (
+                <button
+                  key={target}
+                  type="button"
+                  className="button"
+                  onClick={() => runWriteTest(target)}
+                  disabled={
+                    !snapshot.converterRead ||
+                    snapshot.readState !== 'read' ||
+                    deviceBusy ||
+                    !writeRates[target]
+                  }
+                >
+                  {snapshot.writeTestState === 'writing'
+                    ? 'Writing…'
+                    : `Test ${target === 'usd' ? 'USD' : target === 'eur' ? 'EUR' : 'converter'} rate`}
+                </button>
+              ))}
+            </div>
+            <dl className="read-values test-values">
+              <div>
+                <dt>USD slot 0</dt>
+                <dd>{formatTestRate(writeRates.usd)}</dd>
+              </div>
+              <div>
+                <dt>EUR slot 1</dt>
+                <dd>{formatTestRate(writeRates.eur)}</dd>
+              </div>
+              <div>
+                <dt>Converter</dt>
+                <dd>{formatTestRate(writeRates.converter)}</dd>
+              </div>
+            </dl>
             {snapshot.writeTest && !snapshot.writeTest.restored ? (
               <p className="plan-warnings" role="alert">
                 Restore did not verify. The cashier may still hold{` `}
@@ -350,6 +397,10 @@ export function App({ session }: AppProps) {
             ) : null}
             {snapshot.writeTest ? (
               <dl className="read-values">
+                <div>
+                  <dt>Tested field</dt>
+                  <dd>{writeFieldLabel(snapshot.writeTest.field)}</dd>
+                </div>
                 <div>
                   <dt>Temporary readback</dt>
                   <dd>{formatTestRate(snapshot.writeTest.temporaryReadback)}</dd>
@@ -467,8 +518,8 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Read-only records plus one explicit slot-0 rate write test. No full or multi-field update,
-          and no <code>0xFF</code>.
+          Read-only records plus explicit USD, EUR and converter single-rate write tests. No full or
+          multi-field update, and no <code>0xFF</code>.
         </p>
       </footer>
 
@@ -487,19 +538,22 @@ export function App({ session }: AppProps) {
 
       <ConfirmDialog
         open={writeOpen}
-        title="Run single-rate write test?"
+        title={`Run ${writeTargetLabel(writeTarget)} test?`}
         confirmLabel="Run test"
         onConfirm={confirmWriteTest}
-        onCancel={() => setWriteOpen(false)}
+        onCancel={() => {
+          setWriteOpen(false);
+          setWriteTarget(null);
+        }}
       >
         <p>
-          This temporarily changes the slot 0 USD rate by one raw unit, reads it back, restores it,
-          and reads it back again. Use only when the cashier is idle.
+          This temporarily changes one rate by one raw unit, reads it back, restores it, and reads
+          it back again. Use only when the cashier is idle.
         </p>
         <dl className="read-values">
           <div>
             <dt>Field</dt>
-            <dd>slot 0 exchange rate</dd>
+            <dd>{writeTargetLabel(writeTarget)}</dd>
           </div>
           <div>
             <dt>Current</dt>

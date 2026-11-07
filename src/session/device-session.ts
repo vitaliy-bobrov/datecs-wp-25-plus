@@ -14,6 +14,8 @@ import {
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
 import type { ReadResponse } from '../protocol/read-currencies';
 import {
+  buildConverterRateReadback,
+  buildConverterRateWrite,
   buildFullNameReadback,
   buildFullNameWrite,
   buildRateReadback,
@@ -152,6 +154,7 @@ export class DeviceSession {
   private transport: DeviceTransport | null = null;
 
   private preflightGeneration = 0;
+  private writeDelimiter = 0x32;
 
   constructor(
     private readonly selector: TransportSelector,
@@ -198,6 +201,7 @@ export class DeviceSession {
 
     const environment = environmentDetail();
     const generation = ++this.preflightGeneration;
+    this.writeDelimiter = 0x32;
     this.set({
       phase: 'connecting',
       transportKind: kind,
@@ -336,6 +340,7 @@ export class DeviceSession {
     }
 
     const generation = ++this.preflightGeneration;
+    this.writeDelimiter = 0x32;
     const startedAt = Date.now();
     let attempts = 0;
     const environment = environmentDetail();
@@ -724,6 +729,7 @@ export class DeviceSession {
       message: 'Converter values read',
       detail: { ...converter, ...environment } as Record<string, unknown>,
     });
+    this.writeDelimiter = 0x32;
     this.set({ converterReadState: 'read', converterRead: converter });
   }
 
@@ -879,22 +885,37 @@ export class DeviceSession {
     );
   }
 
-  async runRateWriteTest(): Promise<void> {
-    const original = this.snapshot.foreignRead?.slot0Rate;
+  async runRateWriteTest(slot: 0 | 1 = 0): Promise<void> {
+    const original =
+      slot === 0 ? this.snapshot.foreignRead?.slot0Rate : this.snapshot.foreignRead?.slot1Rate;
     if (!original || !/^\d+$/.test(original)) return;
     const last = original.at(-1) ?? '0';
     const nextLast = last === '9' ? '8' : String(Number(last) + 1);
     await this.executeWriteTest(
-      'slot0Rate',
+      slot === 0 ? 'slot0Rate' : 'slot1Rate',
       original,
       `${original.slice(0, -1)}${nextLast}`,
-      buildRateWrite,
-      buildRateReadback,
+      (value, delimiter) => buildRateWrite(value, delimiter, slot),
+      (delimiter) => buildRateReadback(delimiter, slot),
+    );
+  }
+
+  async runConverterRateWriteTest(): Promise<void> {
+    const original = this.snapshot.converterRead?.rate;
+    if (!original || !/^\d+$/.test(original)) return;
+    const last = original.at(-1) ?? '0';
+    const nextLast = last === '9' ? '8' : String(Number(last) + 1);
+    await this.executeWriteTest(
+      'converterRate',
+      original,
+      `${original.slice(0, -1)}${nextLast}`,
+      buildConverterRateWrite,
+      buildConverterRateReadback,
     );
   }
 
   private async executeWriteTest(
-    field: 'slot0FullName' | 'slot0Rate',
+    field: 'slot0FullName' | 'slot0Rate' | 'slot1Rate' | 'converterRate',
     original: string,
     temporary: string,
     buildWrite: (value: string, delimiter: number) => Uint8Array | null,
@@ -913,11 +934,14 @@ export class DeviceSession {
       return;
     }
 
-    const readPrecheck = buildRead(0x32);
-    const writeTemporary = buildWrite(temporary, 0x33);
-    const readTemporary = buildRead(0x34);
-    const writeRestore = buildWrite(original, 0x35);
-    const readRestore = buildRead(0x36);
+    let base = this.writeDelimiter;
+    if (base + 4 > 0x7e) base = 0x32;
+    this.writeDelimiter = base + 5;
+    const readPrecheck = buildRead(base);
+    const writeTemporary = buildWrite(temporary, base + 1);
+    const readTemporary = buildRead(base + 2);
+    const writeRestore = buildWrite(original, base + 3);
+    const readRestore = buildRead(base + 4);
     if (!writeTemporary || !writeRestore) {
       this.set({
         writeTestState: 'failed',

@@ -467,6 +467,51 @@ describe('DeviceSession', () => {
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 
+  it('tests the EUR slot and converter rate in sequence', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('43955', '2'),
+      type2Response('', '3'),
+      type2Response('43956', '4'),
+      type2Response('', '5'),
+      type2Response('43955', '6'),
+    );
+    await session.runRateWriteTest(1);
+    expect(session.getSnapshot().writeTest).toMatchObject({
+      field: 'slot1Rate',
+      original: '43955',
+      temporary: '43956',
+      restoredReadback: '43955',
+      restored: true,
+    });
+
+    transport.rx.push(
+      type2Response('39251', '7'),
+      type2Response('', '8'),
+      type2Response('39252', '9'),
+      type2Response('', ':'),
+      type2Response('39251', ';'),
+    );
+    await session.runConverterRateWriteTest();
+    expect(session.getSnapshot().writeTestState).toBe('verified');
+    expect(session.getSnapshot().writeTest).toMatchObject({
+      field: 'converterRate',
+      original: '39251',
+      temporary: '39252',
+      restoredReadback: '39251',
+      restored: true,
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 10);
+  });
+
   it('fails the local read visibly when no response arrives', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());

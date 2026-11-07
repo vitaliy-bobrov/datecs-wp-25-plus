@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { toHex } from '../domain/capture-log';
 import { bccMatches, sumFromStxToEnq } from './preflight';
 import {
+  buildConverterRateReadback,
+  buildConverterRateWrite,
   buildRateReadback,
   buildRateWrite,
   CONVERTER_READ_FRAMES,
@@ -168,5 +170,19 @@ describe('single-rate write test', () => {
       '013030333f3230303f3f45786368616e6765526174650930093339323532090530373e3603',
     );
     expect(new TextDecoder().decode(write)).toContain('ExchangeRate');
+  });
+});
+
+describe('slot and converter rate frames', () => {
+  it('builds slot 1 and converter rate queries without 0xFF', () => {
+    const frames = [
+      buildRateWrite('43956', 0x32, 1),
+      buildRateReadback(0x33, 1),
+      buildConverterRateWrite('39252'),
+      buildConverterRateReadback(),
+    ];
+    for (const frame of frames) expect(frame.includes(0xff)).toBe(false);
+    expect(new TextDecoder().decode(frames[0])).toContain('ExchangeRate\t1\t43956');
+    expect(new TextDecoder().decode(frames[2])).toContain('ExchangeRateConvetCurr');
   });
 });

@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — currency reader
 
-Vite/React/TypeScript app with connection diagnostics, the known short preflight, local/foreign/converter reads, an NBP comparison and update preview. It sends no `0xFF`; the only write is an explicit slot-0 single-rate diagnostic test with readback and restore.
+Vite/React/TypeScript app with connection diagnostics, the known short preflight, local/foreign/converter reads, an NBP comparison and update preview. It sends no `0xFF`; the only writes are explicit USD, EUR and converter single-rate diagnostic tests with readback and restore.
 
 ## Develop
 
@@ -33,7 +33,7 @@ Hardware:
 1. Choose **Connect Web Serial** and select the cashier. The preflight, foreign reads and converter read run automatically.
 2. If the automatic reads fail, use the **Retry reading** action.
 3. Download the JSONL and/or text log.
-4. Confirm the read records. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No full update is sent; the single-rate test is separate and requires explicit confirmation.
+4. Confirm the read records. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No full update is sent; the single-rate tests are separate and require explicit confirmation.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -65,7 +65,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 - `src/adapters` — Web Serial and NBP HTTP adapters; the simulator adapter is retained for tests only
 - `src/domain` — capture log, NBP selection/staleness, rate normalization and update preview
 - `src/ports` — transport, clock, lock and error contracts
-- `src/protocol` — preflight, local/foreign/converter reads and the single-rate write frame (the full-name test remains in unit tests only)
+- `src/protocol` — preflight, local/foreign/converter reads and the single-rate write frames (the full-name test remains in unit tests only)
 - `src/session` — connection, lock, read sequences, comparison state and the guarded write test
 - `src/ui` — one-page operator UI
 
@@ -73,9 +73,9 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 ## Current scope
 
-Web Serial for hardware. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only write is an explicit slot-0 single-rate test with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
+Web Serial for hardware. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only writes are explicit USD, EUR and converter single-rate tests with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
-An update preview shows the exact four-decimal targets from NBP against the read records. The only device write is the explicitly confirmed slot-0 rate +1/restore test; full multi-field and converter writes are not implemented.
+An update preview shows the exact four-decimal targets from NBP against the read records. The only device writes are the explicitly confirmed USD, EUR and converter rate +1/restore tests; full multi-field update is not implemented.
 
 
 ## Boundary validation
