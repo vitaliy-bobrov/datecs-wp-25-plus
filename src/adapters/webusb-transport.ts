@@ -92,12 +92,12 @@ export class WebUsbTransport implements DeviceTransport {
         alternateSetting = alternate.alternateSetting;
         endpointCount = alternate.endpoints.length;
 
-        stage = 'select-alternate';
-        await this.device.selectAlternateInterface(iface.interfaceNumber, alternate.alternateSetting);
-
         stage = 'claim-interface';
         await this.device.claimInterface(iface.interfaceNumber);
         this.claimedInterface = iface.interfaceNumber;
+
+        stage = 'select-alternate';
+        await this.device.selectAlternateInterface(iface.interfaceNumber, alternate.alternateSetting);
         break;
       }
 
