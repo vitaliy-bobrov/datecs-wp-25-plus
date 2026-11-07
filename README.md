@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — capture shell
 
-Initial story: a deployable Vite/React/TypeScript shell with WebUSB/Web Serial connect/disconnect and a local raw logger. It sends **no device command** — no preflight, currency read, NBP request or write yet.
+Initial shell plus transport diagnostics: a deployable Vite/React/TypeScript app with Web Serial as the working transport, WebUSB as an experimental option, and a local logger. It sends **no device command** — no preflight, currency read, NBP request or write yet.
 
 ## Develop
 
@@ -13,7 +13,7 @@ npm test
 npm run build
 ```
 
-The app is one page: connection controls, connection facts and the in-memory logger. The logger holds 2000 entries and downloads as JSONL and text. No data is sent to a backend.
+The app is one page: connection controls, connection facts and the in-memory logger. The logger holds 2000 entries and downloads as JSONL and text. Diagnostics include the failing stage, browser error name/message, device/USB IDs, interface/alternate/endpoint and open settings, while serial numbers and OS paths are excluded. No data is sent to a backend.
 
 ## Deploy to GitHub Pages
 
@@ -27,12 +27,12 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 ## Host smoke test
 
 1. Open the Pages URL on the host.
-2. Choose **Connect with WebUSB** (preferred) or **Connect with Web Serial**.
+2. Choose **Connect with Web Serial** (the working transport). WebUSB is experimental.
 3. Select the cashier, confirm the connected state, then disconnect.
 4. Download the JSONL and/or text log.
 5. Confirm the log contains only connection lifecycle entries and no command bytes.
 
-No Docker USB passthrough is used. The DSH/container environment is for building and tests only; hardware access belongs to the host browser.
+No Docker USB passthrough is used. The DSH/container environment is for building and tests only; hardware access belongs to the host browser. On 2026-11-07 WebUSB failed with `device-unavailable`; Web Serial connected. The logger now records enough detail to diagnose the WebUSB failure on the next retest.
 
 ## Current scope
 

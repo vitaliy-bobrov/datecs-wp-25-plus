@@ -10,9 +10,11 @@ interface AppProps {
 }
 
 const TRANSPORT_LABEL: Record<TransportKind, string> = {
-  webusb: 'WebUSB',
+  webusb: 'WebUSB (experimental)',
   webserial: 'Web Serial',
 };
+
+const TRANSPORTS: TransportKind[] = ['webserial', 'webusb'];
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -20,11 +22,15 @@ function formatTime(iso: string): string {
 }
 
 function entrySummary(entry: CaptureEntry): string {
-  if (entry.kind === 'error') return entry.message ?? entry.code ?? 'Error';
-  if (entry.kind === 'connect') return `Connected${entry.device ? `: ${entry.device}` : ''}`;
-  if (entry.kind === 'disconnect') return 'Disconnected';
-  if (entry.kind === 'session') return entry.message ?? 'Session';
-  return entry.message ?? entry.kind;
+  let summary: string;
+  if (entry.kind === 'error') summary = entry.message ?? entry.code ?? 'Error';
+  else if (entry.kind === 'connect') summary = `Connected${entry.device ? `: ${entry.device}` : ''}`;
+  else if (entry.kind === 'disconnect') summary = 'Disconnected';
+  else if (entry.kind === 'session') summary = entry.message ?? 'Session';
+  else summary = entry.message ?? entry.kind;
+
+  const diagnostics = [entry.stage, entry.errorName, entry.errorMessage].filter(Boolean);
+  return diagnostics.length > 0 ? `${summary} · ${diagnostics.join(' · ')}` : summary;
 }
 
 function lockMessage(state: SessionSnapshot['lockState']): string {
@@ -86,7 +92,7 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Capture shell</h1>
           <p className="lede">
-            Read-only connection smoke test and local logger. This build sends no device command.
+            Read-only connection smoke test and local logger. Web Serial is the working transport; WebUSB is experimental. This build sends no device command.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -105,13 +111,13 @@ export function App({ session }: AppProps) {
           <div>
             <p className="label">Select a transport</p>
             <div className="button-row">
-              {(Object.keys(TRANSPORT_LABEL) as TransportKind[]).map((kind) => {
+              {TRANSPORTS.map((kind) => {
                 const supported = supportsTransport(kind);
                 return (
                   <button
                     key={kind}
                     type="button"
-                    className="button primary"
+                    className={`button${kind === 'webserial' ? ' primary' : ''}`}
                     onClick={() => connect(kind)}
                     disabled={!canConnect || !supported}
                     title={supported ? `Select a device using ${TRANSPORT_LABEL[kind]}` : `${TRANSPORT_LABEL[kind]} is unavailable`}
@@ -130,7 +136,7 @@ export function App({ session }: AppProps) {
               </button>
             </div>
             <p className="hint">
-              WebUSB is preferred. Web Serial is an explicit fallback. No device is auto-selected.
+              Web Serial is the working transport. WebUSB is experimental; neither is auto-selected.
             </p>
           </div>
 
@@ -157,7 +163,9 @@ export function App({ session }: AppProps) {
         <div className="status" role="status" aria-live="polite">
           {snapshot.phase === 'connected'
             ? `Connected via ${snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : 'device'}.`
-            : snapshot.error?.message ?? lockMessage(snapshot.lockState)}
+            : snapshot.error
+              ? `${snapshot.error.message}${snapshot.error.detail?.stage ? ` (${snapshot.error.detail.stage}${snapshot.error.detail.errorName ? `, ${snapshot.error.detail.errorName}` : ''})` : ''}`
+              : lockMessage(snapshot.lockState)}
         </div>
       </section>
 

@@ -90,6 +90,35 @@ describe('DeviceSession', () => {
     expect(session.getSnapshot().error?.code).toBe('device-in-use');
   });
 
+  it('retains staged transport diagnostics in the session and logger', async () => {
+    const lock = new FakeLock();
+    const selector: TransportSelector = {
+      select: async () => {
+        throw new TransportError('device-unavailable', 'The device is unavailable or disconnected.', {
+          operation: 'webusb.open',
+          stage: 'claim-interface',
+          errorName: 'NetworkError',
+          errorMessage: 'claim failed',
+          device: { label: 'WP-25 Plus', vendorId: 0x1234, productId: 0x5678 },
+          interfaceNumber: 1,
+          alternateSetting: 0,
+          endpointCount: 2,
+        });
+      },
+    };
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect('webusb');
+
+    expect(session.getSnapshot().error?.detail?.stage).toBe('claim-interface');
+    expect(session.getSnapshot().error?.detail?.errorName).toBe('NetworkError');
+    const last = session.getSnapshot().capture.at(-1);
+    expect(last?.stage).toBe('claim-interface');
+    expect(last?.errorName).toBe('NetworkError');
+    expect(last?.detail?.interfaceNumber).toBe(1);
+  });
+
   it('reports a cancelled selection without opening a transport', async () => {
     const lock = new FakeLock();
     const selector: TransportSelector = {

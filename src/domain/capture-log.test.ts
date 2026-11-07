@@ -39,6 +39,23 @@ describe('CaptureLog', () => {
     expect(log.toText()).toContain('webusb\tWP-25 Plus\trx');
   });
 
+  it('keeps staged error diagnostics in text and JSONL', () => {
+    const log = new CaptureLog(new FixedClock());
+    log.append({
+      kind: 'error',
+      code: 'device-unavailable',
+      message: 'The device is unavailable or disconnected.',
+      stage: 'claim-interface',
+      errorName: 'NetworkError',
+      errorMessage: 'claim failed',
+      detail: { interfaceNumber: 1, endpointCount: 2 },
+    });
+
+    expect(log.toText()).toContain('claim-interface\tNetworkError\tclaim failed');
+    expect(log.toJsonl()).toContain('"stage":"claim-interface"');
+    expect(log.toJsonl()).toContain('"interfaceNumber":1');
+  });
+
   it('clears all entries', () => {
     const log = new CaptureLog(new FixedClock());
     log.append({ kind: 'session', message: 'one' });

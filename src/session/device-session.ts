@@ -3,8 +3,10 @@ import type { CaptureLog } from '../domain/capture-log';
 import type { DeviceLock } from '../ports/device-lock';
 import {
   toTransportError,
+  TransportError,
   type DeviceTransport,
   type TransportErrorCode,
+  type TransportErrorDetail,
   type TransportInfo,
   type TransportKind,
   type TransportSelector,
@@ -16,6 +18,7 @@ export type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable'
 export interface SessionError {
   code: TransportErrorCode | 'unknown';
   message: string;
+  detail?: TransportErrorDetail;
 }
 
 export interface SessionSnapshot {
@@ -38,6 +41,14 @@ const PUBLIC_ERROR: Record<TransportErrorCode, string> = {
   'locks-unavailable': 'This browser cannot guarantee a single device session.',
   unknown: 'An unexpected device error occurred.',
 };
+
+function environmentDetail(): TransportErrorDetail {
+  if (typeof navigator === 'undefined') return {};
+  return {
+    userAgent: navigator.userAgent,
+    platform: navigator.platform,
+  };
+}
 
 export class DeviceSession {
   private snapshot: SessionSnapshot = {
@@ -80,16 +91,24 @@ export class DeviceSession {
 
     if (this.snapshot.lockState !== 'held') {
       this.fail(
-        this.snapshot.lockState === 'unavailable' ? 'locks-unavailable' : 'device-in-use',
+        new TransportError(
+          this.snapshot.lockState === 'unavailable' ? 'locks-unavailable' : 'device-in-use',
+          this.snapshot.lockState === 'unavailable'
+            ? PUBLIC_ERROR['locks-unavailable']
+            : PUBLIC_ERROR['device-in-use'],
+          { operation: 'session.lock', stage: 'acquire-lock', ...environmentDetail() },
+        ),
       );
       return;
     }
 
+    const environment = environmentDetail();
     this.set({ phase: 'connecting', transportKind: kind, error: undefined });
     this.append({
       kind: 'session',
       transport: kind,
       message: 'Connecting',
+      detail: environment as Record<string, unknown>,
     });
 
     try {
@@ -106,10 +125,11 @@ export class DeviceSession {
         transport: kind,
         device: info.label,
         message: 'Connected',
+        detail: { ...info, ...environment },
       });
     } catch (error) {
-      const transportError = toTransportError(error);
-      this.fail(transportError.code);
+      const transportError = toTransportError(error, 'session.connect', environment);
+      this.fail(transportError);
     }
   }
 
@@ -121,11 +141,15 @@ export class DeviceSession {
       try {
         await transport.close();
       } catch (error) {
-        const transportError = toTransportError(error);
+        const transportError = toTransportError(error, 'session.disconnect');
         this.append({
           kind: 'error',
           code: transportError.code,
           message: PUBLIC_ERROR[transportError.code],
+          stage: transportError.detail?.stage,
+          errorName: transportError.detail?.errorName,
+          errorMessage: transportError.detail?.errorMessage,
+          detail: transportError.detail as Record<string, unknown> | undefined,
         });
       }
     }
@@ -151,11 +175,20 @@ export class DeviceSession {
     return this.capture.toText();
   }
 
-  private fail(code: TransportErrorCode): void {
-    this.append({ kind: 'error', code, message: PUBLIC_ERROR[code] });
+  private fail(error: TransportError): void {
+    const detail = { ...environmentDetail(), ...error.detail };
+    this.append({
+      kind: 'error',
+      code: error.code,
+      message: PUBLIC_ERROR[error.code],
+      stage: detail?.stage,
+      errorName: detail?.errorName,
+      errorMessage: detail?.errorMessage,
+      detail: detail as Record<string, unknown> | undefined,
+    });
     this.set({
       phase: 'error',
-      error: { code, message: PUBLIC_ERROR[code] },
+      error: { code: error.code, message: PUBLIC_ERROR[error.code], detail },
     });
   }
 

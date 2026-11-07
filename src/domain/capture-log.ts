@@ -13,6 +13,10 @@ export interface CaptureEntry {
   bytesHex?: string;
   code?: string;
   message?: string;
+  stage?: string;
+  errorName?: string;
+  errorMessage?: string;
+  detail?: Record<string, unknown>;
 }
 
 export interface CaptureInput {
@@ -23,6 +27,10 @@ export interface CaptureInput {
   bytes?: Uint8Array;
   code?: string;
   message?: string;
+  stage?: string;
+  errorName?: string;
+  errorMessage?: string;
+  detail?: Record<string, unknown>;
 }
 
 const DEFAULT_LIMIT = 2000;
@@ -47,6 +55,10 @@ export class CaptureLog {
       bytesHex: input.bytes && input.bytes.length > 0 ? toHex(input.bytes) : undefined,
       code: input.code,
       message: input.message,
+      stage: input.stage,
+      errorName: input.errorName,
+      errorMessage: input.errorMessage,
+      detail: input.detail,
     };
     this.nextId += 1;
     this.entries.push(entry);
@@ -80,6 +92,10 @@ export class CaptureLog {
           entry.bytesHex ?? '-',
           entry.code ?? '-',
           entry.message ?? '-',
+          entry.stage ?? '-',
+          entry.errorName ?? '-',
+          entry.errorMessage ?? '-',
+          entry.detail ? JSON.stringify(entry.detail) : '-',
         ];
         return parts.join('\t');
       })
