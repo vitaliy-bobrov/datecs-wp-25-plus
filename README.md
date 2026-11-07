@@ -28,12 +28,6 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 
 ## Hardware smoke test
 
-Simulator:
-
-1. Open the Pages URL in the browser.
-2. Choose **Open simulator**; the preflight runs automatically.
-3. Confirm `captured · type2` with the exact tx/rx bytes; use **Run preflight** to retry.
-
 Hardware:
 
 1. Choose **Connect Web Serial** and select the cashier. The preflight, foreign reads and converter read run automatically.
@@ -68,7 +62,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 ## Architecture and terms
 
 - `src/app` — composition and external NBP client wiring
-- `src/adapters` — Web Serial, simulator and NBP HTTP adapters
+- `src/adapters` — Web Serial and NBP HTTP adapters; the simulator adapter is retained for tests only
 - `src/domain` — capture log, NBP selection/staleness, rate normalization and update preview
 - `src/ports` — transport, clock, lock and error contracts
 - `src/protocol` — preflight, local/foreign/converter reads and the one-field write frame
@@ -79,7 +73,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 ## Current scope
 
-Web Serial for hardware; an explicit simulator for the same preflight path. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only write is an explicit slot-0 full-name test with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
+Web Serial for hardware. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only write is an explicit slot-0 full-name test with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
 An update preview shows the exact four-decimal targets from NBP against the read records. The only device write is the explicitly confirmed slot-0 full-name marker/restore test; rate, multi-field and converter writes are not implemented.
 

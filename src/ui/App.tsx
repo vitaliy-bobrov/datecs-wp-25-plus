@@ -208,25 +208,13 @@ export function App({ session }: AppProps) {
               <button
                 type="button"
                 className="button"
-                onClick={() => void connect('simulator')}
-                disabled={!canConnect}
-                title="Open the built-in Type2 preflight simulator"
-              >
-                Open simulator
-              </button>
-              <button
-                type="button"
-                className="button"
                 onClick={() => void session.disconnect()}
                 disabled={snapshot.phase === 'idle' || deviceBusy}
               >
                 Disconnect
               </button>
             </div>
-            <p className="hint">
-              Web Serial is the only hardware transport. The simulator is an explicit test path;
-              nothing is auto-selected.
-            </p>
+            <p className="hint">Web Serial is the only transport. Nothing is auto-selected.</p>
             {snapshot.lockState === 'in-use' || snapshot.lockState === 'unavailable' ? (
               <button type="button" className="button" onClick={() => void session.acquireLock()}>
                 Retry device lock
