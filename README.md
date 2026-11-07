@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — capture shell
 
-Web Serial-only capture shell: a deployable Vite/React/TypeScript app with connection diagnostics, the known short preflight and a raw preflight logger. It sends no currency read, NBP request or write.
+Web Serial-only capture shell: a deployable Vite/React/TypeScript app with connection diagnostics, the known short preflight, a Type2 response logger and an NBP USD/EUR reference panel. It sends no currency read or write.
 
 ## Develop
 
@@ -36,6 +36,6 @@ No Docker USB passthrough is used. The DSH/container environment is for building
 
 ## Current scope
 
-Web Serial only. The app connects, sends the exact short preflight, captures the raw response, attempts strict short/long frame validation and marks anything ambiguous as `captureOnly`. It sends no `0xFF`, currency read, NBP request or write.
+Web Serial only. The app connects, sends the exact short preflight, captures and validates the I90 Type2 response, and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`, currency read or write.
 
 The next step is analysing the hardware response; the read/write epic remains gated on real evidence.

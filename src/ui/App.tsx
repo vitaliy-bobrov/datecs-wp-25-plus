@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { supportsWebSerial } from '../app/capabilities';
+import { nbpClient } from '../app/nbp-service';
+import { errorMessage, type NbpSnapshot } from '../domain/nbp';
 import type { CaptureEntry } from '../domain/capture-log';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { downloadText } from './download';
@@ -7,6 +9,11 @@ import { downloadText } from './download';
 interface AppProps {
   session: DeviceSession;
 }
+
+type NbpState =
+  | { status: 'loading' }
+  | { status: 'ready'; data: NbpSnapshot }
+  | { status: 'error'; message: string };
 
 function formatTime(iso: string): string {
   const date = new Date(iso);
@@ -43,10 +50,24 @@ function lockMessage(state: SessionSnapshot['lockState']): string {
 export function App({ session }: AppProps) {
   const snapshot = useSyncExternalStore(session.subscribe, session.getSnapshot, session.getSnapshot);
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
 
   useEffect(() => {
     void session.acquireLock();
   }, [session]);
+
+  const loadNbp = async () => {
+    setNbp({ status: 'loading' });
+    try {
+      setNbp({ status: 'ready', data: await nbpClient.fetchPreviousRates() });
+    } catch (error) {
+      setNbp({ status: 'error', message: errorMessage(error) });
+    }
+  };
+
+  useEffect(() => {
+    void loadNbp();
+  }, []);
 
   const canConnect =
     snapshot.lockState === 'held' &&
@@ -198,6 +219,58 @@ export function App({ session }: AppProps) {
           </div>
         ) : (
           <p className="empty">No preflight yet. Connect first, then run it.</p>
+        )}
+      </section>
+
+      <section className="card nbp" aria-labelledby="nbp-heading">
+        <div className="card-heading">
+          <div>
+            <h2 id="nbp-heading">NBP reference</h2>
+            <p className="muted">Table A · USD/EUR · previous business day · in-memory only</p>
+          </div>
+          <div className="button-row compact">
+            {nbp.status === 'ready' && nbp.data.stale ? <span className="state state-failed">stale</span> : null}
+            <button
+              type="button"
+              className="button"
+              onClick={() => void loadNbp()}
+              disabled={nbp.status === 'loading'}
+            >
+              {nbp.status === 'loading' ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+        </div>
+
+        {nbp.status === 'loading' ? (
+          <p className="empty" aria-live="polite">Loading NBP table A…</p>
+        ) : nbp.status === 'error' ? (
+          <div className="nbp-error" role="alert">
+            <p>{nbp.message}</p>
+            <button type="button" className="button" onClick={() => void loadNbp()}>Retry</button>
+          </div>
+        ) : (
+          <div aria-live="polite">
+            <p className="nbp-meta">
+              Effective <strong>{nbp.data.table.effectiveDate}</strong>
+              {' · '}{nbp.data.ageDays} calendar day{nbp.data.ageDays === 1 ? '' : 's'} old
+              {nbp.data.stale ? ' · previous table is stale' : ''}
+            </p>
+            <dl className="rates">
+              {(['USD', 'EUR'] as const).map((code) => {
+                const rate = nbp.data.table.rates.find((item) => item.code === code);
+                return (
+                  <div key={code}>
+                    <dt>{code}</dt>
+                    <dd>{rate ? rate.mid : 'unavailable'}</dd>
+                    <span>{rate?.currency ?? ''}</span>
+                  </div>
+                );
+              })}
+            </dl>
+            <p className="hint">
+              Reference only. Cashier comparison is unavailable until the read/write epic has hardware evidence.
+            </p>
+          </div>
         )}
       </section>
 
