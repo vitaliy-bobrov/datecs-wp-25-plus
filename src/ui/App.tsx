@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
-import { errorMessage, type NbpSnapshot } from '../domain/nbp';
+import { errorMessage } from '../domain/nbp';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
-import { downloadText } from './download';
+import { captureDownload, downloadText } from './download';
+import { displayEntries, formatTimestamp, formatUsbIds, stateClass, stateLabel } from './log-view';
+import { NbpPanel, type NbpState } from './NbpPanel';
 
 interface AppProps {
   session: DeviceSession;
@@ -15,16 +17,6 @@ const TRANSPORT_LABEL: Record<TransportKind, string> = {
   webserial: 'Web Serial',
   simulator: 'Simulator',
 };
-
-type NbpState =
-  | { status: 'loading' }
-  | { status: 'ready'; data: NbpSnapshot }
-  | { status: 'error'; message: string };
-
-function formatTime(iso: string): string {
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleTimeString([], { hour12: false });
-}
 
 function entrySummary(entry: CaptureEntry): string {
   let summary: string;
@@ -85,31 +77,33 @@ export function App({ session }: AppProps) {
     snapshot.phase !== 'connecting' &&
     snapshot.phase !== 'connected';
 
-  const entries = useMemo(() => [...snapshot.capture].reverse().slice(0, 250), [snapshot.capture]);
+  const entries = useMemo(() => displayEntries(snapshot.capture, 250), [snapshot.capture]);
+  const busy = snapshot.captureState === 'capturing';
 
   const canPreflight = snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
+
+  const clearCapture = () => {
+    if (busy) return;
+    if (window.confirm('Clear the device log and preflight result?')) {
+      session.clearCapture();
+      setCopyState('idle');
+    }
+  };
 
   const connect = (kind: TransportKind) => {
     void session.connect(kind);
   };
 
   const download = (format: 'jsonl' | 'text') => {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    if (format === 'jsonl') {
-      downloadText(
-        `datecs-wp25-capture-${stamp}.jsonl`,
-        session.captureJsonl(),
-        'application/x-ndjson',
-      );
-    } else {
-      downloadText(`datecs-wp25-capture-${stamp}.txt`, session.captureText(), 'text/plain');
-    }
+    const file = captureDownload(format, session);
+    downloadText(file.filename, file.text, file.mime);
   };
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(session.captureText());
       setCopyState('copied');
+      setTimeout(() => setCopyState('idle'), 2000);
     } catch {
       setCopyState('failed');
     }
@@ -135,7 +129,9 @@ export function App({ session }: AppProps) {
             <h2 id="connection-heading">Connection</h2>
             <p className="muted">{lockMessage(snapshot.lockState)}</p>
           </div>
-          <span className={`state state-${snapshot.phase}`}>{snapshot.phase}</span>
+          <span className={`state state-${stateClass(snapshot.phase)}`}>
+            {stateLabel(snapshot.phase)}
+          </span>
         </div>
 
         <div className="connection-grid">
@@ -168,7 +164,7 @@ export function App({ session }: AppProps) {
                 type="button"
                 className="button"
                 onClick={() => void session.disconnect()}
-                disabled={snapshot.phase !== 'connected' && snapshot.phase !== 'error'}
+                disabled={snapshot.phase === 'idle'}
               >
                 Disconnect
               </button>
@@ -177,6 +173,11 @@ export function App({ session }: AppProps) {
               Web Serial is the only hardware transport. The simulator is an explicit test path;
               nothing is auto-selected.
             </p>
+            {snapshot.lockState === 'in-use' || snapshot.lockState === 'unavailable' ? (
+              <button type="button" className="button" onClick={() => void session.acquireLock()}>
+                Retry device lock
+              </button>
+            ) : null}
           </div>
 
           <dl className="facts">
@@ -190,20 +191,20 @@ export function App({ session }: AppProps) {
             </div>
             <div>
               <dt>USB IDs</dt>
-              <dd>
-                {snapshot.info?.vendorId !== undefined
-                  ? `${snapshot.info.vendorId.toString(16)}:${(snapshot.info.productId ?? 0).toString(16)}`
-                  : '—'}
-              </dd>
+              <dd>{formatUsbIds(snapshot.info?.vendorId, snapshot.info?.productId)}</dd>
             </div>
           </dl>
         </div>
 
-        <div className="status" role="status" aria-live="polite">
+        <div
+          className={`status${snapshot.error ? ' status-error' : ''}`}
+          role={snapshot.error ? 'alert' : 'status'}
+          aria-live={snapshot.error ? 'assertive' : 'polite'}
+        >
           {snapshot.phase === 'connected'
             ? `Connected via ${snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : 'transport'}.`
             : snapshot.error
-              ? `${snapshot.error.message}${snapshot.error.detail?.stage ? ` (${snapshot.error.detail.stage}${snapshot.error.detail.errorName ? `, ${snapshot.error.detail.errorName}` : ''})` : ''}`
+              ? `${snapshot.error.message}${snapshot.error.detail?.stage ? ` (${snapshot.error.detail.stage}${snapshot.error.detail.errorName ? `, ${snapshot.error.detail.errorName}` : ''})` : ''}${snapshot.error.detail?.errorMessage ? ` — ${snapshot.error.detail.errorMessage}` : ''}`
               : lockMessage(snapshot.lockState)}
         </div>
       </section>
@@ -217,7 +218,9 @@ export function App({ session }: AppProps) {
               currency read or write.
             </p>
           </div>
-          <span className={`state state-${snapshot.captureState}`}>{snapshot.captureState}</span>
+          <span className={`state state-${stateClass(snapshot.captureState)}`}>
+            {stateLabel(snapshot.captureState)}
+          </span>
         </div>
 
         <div className="button-row">
@@ -241,7 +244,17 @@ export function App({ session }: AppProps) {
                 ? ` · status2 ${snapshot.preflight.secondaryStatusHex}`
                 : ''}
               {snapshot.preflight.reason ? ` · ${snapshot.preflight.reason}` : ''}
+              {snapshot.preflight.attempts ? ` · ${snapshot.preflight.attempts} attempt(s)` : ''}
+              {snapshot.preflight.elapsedMs !== undefined
+                ? ` · ${snapshot.preflight.elapsedMs} ms`
+                : ''}
             </p>
+            {snapshot.preflight.txHex ? (
+              <p className="raw">
+                <span>Sent</span>
+                <code>{snapshot.preflight.txHex}</code>
+              </p>
+            ) : null}
             {snapshot.preflight.rawHex ? (
               <p className="raw">
                 <span>Raw response</span>
@@ -254,78 +267,23 @@ export function App({ session }: AppProps) {
         )}
       </section>
 
-      <section className="card nbp" aria-labelledby="nbp-heading">
-        <div className="card-heading">
-          <div>
-            <h2 id="nbp-heading">NBP reference</h2>
-            <p className="muted">Table A · USD/EUR · previous business day · in-memory only</p>
-          </div>
-          <div className="button-row compact">
-            {nbp.status === 'ready' && nbp.data.stale ? (
-              <span className="state state-failed">stale</span>
-            ) : null}
-            <button
-              type="button"
-              className="button"
-              onClick={() => void loadNbp()}
-              disabled={nbp.status === 'loading'}
-            >
-              {nbp.status === 'loading' ? 'Loading…' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        {nbp.status === 'loading' ? (
-          <p className="empty" aria-live="polite">
-            Loading NBP table A…
-          </p>
-        ) : nbp.status === 'error' ? (
-          <div className="nbp-error" role="alert">
-            <p>{nbp.message}</p>
-            <button type="button" className="button" onClick={() => void loadNbp()}>
-              Retry
-            </button>
-          </div>
-        ) : (
-          <div aria-live="polite">
-            <p className="nbp-meta">
-              Effective <strong>{nbp.data.table.effectiveDate}</strong>
-              {' · '}
-              {nbp.data.ageDays} calendar day{nbp.data.ageDays === 1 ? '' : 's'} old
-              {nbp.data.stale ? ' · previous table is stale' : ''}
-            </p>
-            <dl className="rates">
-              {(['USD', 'EUR'] as const).map((code) => {
-                const rate = nbp.data.table.rates.find((item) => item.code === code);
-                return (
-                  <div key={code}>
-                    <dt>{code}</dt>
-                    <dd>{rate ? rate.mid : 'unavailable'}</dd>
-                    <span>{rate?.currency ?? ''}</span>
-                  </div>
-                );
-              })}
-            </dl>
-            <p className="hint">
-              Reference only. Cashier comparison is unavailable until the read/write epic has
-              hardware evidence.
-            </p>
-          </div>
-        )}
-      </section>
+      <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
 
       <section className="card logger" aria-labelledby="logger-heading">
         <div className="card-heading">
           <div>
             <h2 id="logger-heading">Logger</h2>
-            <p className="muted">{snapshot.capture.length} entries · in memory only · no network</p>
+            <p className="muted">
+              Device log in memory · showing {entries.length} of {snapshot.capture.length} entries ·
+              NBP is fetched separately
+            </p>
           </div>
           <div className="button-row compact">
             <button
               type="button"
               className="button"
-              onClick={() => session.clearCapture()}
-              disabled={snapshot.capture.length === 0}
+              onClick={clearCapture}
+              disabled={busy || snapshot.capture.length === 0}
             >
               Clear
             </button>
@@ -333,7 +291,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => void copy()}
-              disabled={snapshot.capture.length === 0}
+              disabled={busy || snapshot.capture.length === 0}
             >
               {copyState === 'copied'
                 ? 'Copied'
@@ -345,7 +303,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => download('jsonl')}
-              disabled={snapshot.capture.length === 0}
+              disabled={busy || snapshot.capture.length === 0}
             >
               Download JSONL
             </button>
@@ -353,7 +311,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => download('text')}
-              disabled={snapshot.capture.length === 0}
+              disabled={busy || snapshot.capture.length === 0}
             >
               Download text
             </button>
@@ -379,7 +337,7 @@ export function App({ session }: AppProps) {
               <tbody>
                 {entries.map((entry) => (
                   <tr key={entry.id}>
-                    <td className="mono nowrap">{formatTime(entry.ts)}</td>
+                    <td className="mono nowrap">{formatTimestamp(entry.ts)}</td>
                     <td>{entry.kind}</td>
                     <td>{entry.transport ? TRANSPORT_LABEL[entry.transport] : '—'}</td>
                     <td>{entry.device ?? '—'}</td>
@@ -387,6 +345,12 @@ export function App({ session }: AppProps) {
                     <td>
                       {entrySummary(entry)}
                       {entry.code ? <span className="code"> {entry.code}</span> : null}
+                      {entry.detail ? (
+                        <details className="log-detail">
+                          <summary>details</summary>
+                          <pre>{JSON.stringify(entry.detail, null, 2)}</pre>
+                        </details>
+                      ) : null}
                     </td>
                   </tr>
                 ))}

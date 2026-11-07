@@ -56,6 +56,14 @@ describe('CaptureLog', () => {
     expect(log.toJsonl()).toContain('"interfaceNumber":1');
   });
 
+  it('escapes tabs and newlines in the text export', () => {
+    const log = new CaptureLog(new FixedClock());
+    log.append({ kind: 'error', message: 'line one\tline two\nline three' });
+
+    expect(log.toText()).not.toContain('\nline three');
+    expect(log.toText()).toContain('line one line two line three');
+  });
+
   it('clears all entries', () => {
     const log = new CaptureLog(new FixedClock());
     log.append({ kind: 'session', message: 'one' });

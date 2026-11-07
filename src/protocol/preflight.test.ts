@@ -91,6 +91,11 @@ describe('preflight protocol', () => {
     ]);
   });
 
+  it('reports ambiguity rather than guessing when two candidates validate', () => {
+    const raw = Uint8Array.from(longFrame([], [0, 1, 2, 3, 4, 5]));
+    expect(parseResponse(raw).kind).toBe('ambiguous');
+  });
+
   it('rejects a corrupted BCC', () => {
     const raw = longFrame([], [0, 1, 2, 3, 4, 5]);
     raw[raw.length - 2] = 0x3f;

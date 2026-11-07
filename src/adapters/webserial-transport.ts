@@ -37,6 +37,32 @@ export class WebSerialTransport implements DeviceTransport {
     };
   }
 
+  private async settle(promise: Promise<unknown> | undefined, timeoutMs = 1000): Promise<void> {
+    if (!promise) return;
+    await Promise.race([
+      promise.then(
+        () => undefined,
+        () => undefined,
+      ),
+      new Promise<void>((resolve) => setTimeout(resolve, timeoutMs)),
+    ]);
+  }
+
+  private async resetReader(): Promise<void> {
+    const reader = this.reader;
+    this.reader = null;
+    this.pendingRead = null;
+    await this.settle(reader?.cancel());
+    try {
+      reader?.releaseLock();
+    } catch {
+      // Ignore lock release errors while replacing the reader.
+    }
+    if (this.port.readable) {
+      this.reader = this.port.readable.getReader();
+    }
+  }
+
   async open(): Promise<TransportInfo> {
     try {
       await this.port.open({
@@ -63,13 +89,22 @@ export class WebSerialTransport implements DeviceTransport {
       this.writer = this.port.writable.getWriter();
     } catch (error) {
       try {
+        await this.reader?.cancel();
+        this.reader?.releaseLock();
+      } catch {
+        // Ignore reader cleanup errors.
+      }
+      this.reader = null;
+      try {
         await this.port.close();
       } catch {
         // Keep the original diagnostic.
       }
+      const stage =
+        error instanceof TransportError && error.detail?.stage ? error.detail.stage : 'port.open';
       throw toTransportError(error, 'webserial.open', {
         operation: 'webserial.open',
-        stage: 'port.open',
+        stage,
         device: this.deviceDetail(),
         baudRate: 9600,
         dataBits: 8,
@@ -140,6 +175,11 @@ export class WebSerialTransport implements DeviceTransport {
       return result.value ?? new Uint8Array();
     } catch (error) {
       if (error instanceof TransportError && error.code === 'timeout') {
+        try {
+          await this.resetReader();
+        } catch {
+          // The timeout remains the primary diagnostic.
+        }
         throw error;
       }
       this.pendingRead = null;
@@ -154,16 +194,11 @@ export class WebSerialTransport implements DeviceTransport {
   }
 
   async flushInput(): Promise<void> {
-    // Reads are drained by the capture loop; no extra command is sent.
+    await this.resetReader();
   }
 
   async close(): Promise<void> {
-    try {
-      await this.reader?.cancel();
-    } catch {
-      // The stream may already be closed.
-    }
-
+    await this.settle(this.reader?.cancel());
     try {
       this.reader?.releaseLock();
     } catch {
@@ -180,8 +215,8 @@ export class WebSerialTransport implements DeviceTransport {
     this.writer = null;
 
     try {
-      await this.port.close();
-      await this.port.forget?.();
+      await this.settle(this.port.close());
+      await this.settle(this.port.forget?.());
     } catch (error) {
       throw toTransportError(error, 'webserial.close', {
         operation: 'webserial.close',

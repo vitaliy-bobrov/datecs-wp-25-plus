@@ -13,6 +13,9 @@ export class SimulatorTransport implements DeviceTransport {
   private closed = false;
 
   async open(): Promise<TransportInfo> {
+    this.sent = false;
+    this.emitted = false;
+    this.closed = false;
     return {
       kind: 'simulator',
       label: 'Built-in preflight simulator',
@@ -37,17 +40,18 @@ export class SimulatorTransport implements DeviceTransport {
       );
     }
     this.sent = true;
+    this.emitted = false;
   }
 
   async readChunk(_timeoutMs: number): Promise<Uint8Array> {
-    if (!this.sent || this.emitted) {
+    if (this.closed || !this.sent || this.emitted) {
       throw new TransportError('timeout', 'The simulator has no response.', {
         operation: 'simulator.read',
         stage: 'read',
       });
     }
     this.emitted = true;
-    return SIMULATOR_PREFLIGHT_RESPONSE;
+    return SIMULATOR_PREFLIGHT_RESPONSE.slice();
   }
 
   async flushInput(): Promise<void> {}

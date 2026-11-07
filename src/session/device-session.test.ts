@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { SimulatorTransport } from '../adapters/simulator-transport';
+import { SIMULATOR_PREFLIGHT_RESPONSE, SimulatorTransport } from '../adapters/simulator-transport';
 import { CaptureLog } from '../domain/capture-log';
 import type { DeviceLock } from '../ports/device-lock';
 import type {
@@ -38,6 +38,7 @@ class FakeTransport implements DeviceTransport {
   closed = false;
   written: Uint8Array[] = [];
   rx: Uint8Array[] = [];
+  writeError: Error | null = null;
 
   async open(): Promise<TransportInfo> {
     this.opened = true;
@@ -49,6 +50,7 @@ class FakeTransport implements DeviceTransport {
   }
 
   async write(bytes: Uint8Array): Promise<void> {
+    if (this.writeError) throw this.writeError;
     this.written.push(bytes);
   }
 
@@ -158,7 +160,7 @@ describe('DeviceSession', () => {
     await session.connect();
     const transport = selector.last;
     if (!transport) throw new Error('Fake transport was not created.');
-    transport.rx.push(Uint8Array.from([0x15]));
+    transport.rx.push(Uint8Array.from([0x00]));
     await session.runPreflight();
 
     expect(transport.written).toHaveLength(1);
@@ -167,7 +169,7 @@ describe('DeviceSession', () => {
       0x03,
     ]);
     expect(session.getSnapshot().captureState).toBe('captureOnly');
-    expect(session.getSnapshot().preflight?.rawHex).toBe('15');
+    expect(session.getSnapshot().preflight?.rawHex).toBe('00');
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'tx')).toBe(true);
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'rx')).toBe(true);
   });
@@ -192,6 +194,112 @@ describe('DeviceSession', () => {
     expect(session.getSnapshot().preflight?.statusHex).toBe('80808280869a8080');
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'tx')).toBe(true);
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'rx')).toBe(true);
+  });
+
+  it('notifies subscribers on state changes', async () => {
+    const session = new DeviceSession(
+      new FakeSelector(),
+      new CaptureLog(new FixedClock()),
+      new FakeLock(),
+    );
+    const listener = vi.fn();
+    const unsubscribe = session.subscribe(listener);
+
+    await session.acquireLock();
+    expect(listener).toHaveBeenCalled();
+    unsubscribe();
+  });
+
+  it('reports an in-use lock without connecting', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(
+      selector,
+      new CaptureLog(new FixedClock()),
+      new FakeLock(false),
+    );
+
+    await session.acquireLock();
+    await session.connect();
+
+    expect(session.getSnapshot().lockState).toBe('in-use');
+    expect(session.getSnapshot().error?.code).toBe('device-in-use');
+    expect(selector.select).not.toHaveBeenCalled();
+  });
+
+  it('does not write during connect', async () => {
+    const lock = new FakeLock();
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect();
+
+    expect(selector.last?.written).toHaveLength(0);
+  });
+
+  it('reports a silent device as failed, not capture-only', async () => {
+    const lock = new FakeLock();
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect();
+    await session.runPreflight();
+
+    expect(session.getSnapshot().captureState).toBe('failed');
+    expect(session.getSnapshot().preflight?.status).toBe('failed');
+    expect(session.getSnapshot().capture.some((entry) => entry.code === 'timeout')).toBe(true);
+  });
+
+  it('does not log tx when write fails', async () => {
+    const lock = new FakeLock();
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    transport.writeError = new TransportError('device-unavailable', 'write failed');
+
+    await session.runPreflight();
+
+    expect(session.getSnapshot().captureState).toBe('failed');
+    expect(session.getSnapshot().capture.some((entry) => entry.kind === 'tx')).toBe(false);
+  });
+
+  it('resends once after NAK and captures the retry response', async () => {
+    const lock = new FakeLock();
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock, 0);
+
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    transport.rx.push(Uint8Array.from([0x15]), SIMULATOR_PREFLIGHT_RESPONSE);
+
+    await session.runPreflight();
+
+    expect(transport.written).toHaveLength(2);
+    expect(session.getSnapshot().captureState).toBe('captured');
+    expect(session.getSnapshot().preflight?.mode).toBe('type2');
+  });
+
+  it('supports a second simulator preflight', async () => {
+    const lock = new FakeLock();
+    const selector: TransportSelector = {
+      select: async () => new SimulatorTransport(),
+    };
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock, 0);
+
+    await session.acquireLock();
+    await session.connect('simulator');
+    await session.runPreflight();
+    await session.runPreflight();
+
+    expect(session.getSnapshot().captureState).toBe('captured');
+    expect(session.getSnapshot().preflight?.mode).toBe('type2');
   });
 
   it('reports an unavailable lock', async () => {

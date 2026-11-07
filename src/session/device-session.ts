@@ -29,6 +29,9 @@ export interface PreflightResult {
   statusHex?: string;
   secondaryStatusHex?: string;
   rawHex?: string;
+  txHex?: string;
+  attempts?: number;
+  elapsedMs?: number;
   reason?: string;
 }
 
@@ -59,6 +62,7 @@ const PUBLIC_ERROR: Record<TransportErrorCode, string> = {
 function environmentDetail(): TransportErrorDetail {
   if (typeof navigator === 'undefined') return {};
   return {
+    appVersion: __APP_VERSION__,
     userAgent: navigator.userAgent,
     platform: navigator.platform,
   };
@@ -82,10 +86,13 @@ export class DeviceSession {
   private readonly listeners = new Set<() => void>();
   private transport: DeviceTransport | null = null;
 
+  private preflightGeneration = 0;
+
   constructor(
     private readonly selector: TransportSelector,
     private readonly capture: CaptureLog,
     private readonly lock: DeviceLock,
+    private readonly retryDelayMs = 3000,
   ) {}
 
   getSnapshot = (): SessionSnapshot => this.snapshot;
@@ -125,6 +132,7 @@ export class DeviceSession {
     }
 
     const environment = environmentDetail();
+    const generation = ++this.preflightGeneration;
     this.set({
       phase: 'connecting',
       transportKind: kind,
@@ -142,6 +150,10 @@ export class DeviceSession {
     try {
       const transport = await this.selector.select(kind);
       const info = await transport.open();
+      if (generation !== this.preflightGeneration) {
+        await transport.close().catch(() => undefined);
+        return;
+      }
       this.transport = transport;
       this.set({
         phase: 'connected',
@@ -156,12 +168,14 @@ export class DeviceSession {
         detail: { ...info, ...environment },
       });
     } catch (error) {
+      if (generation !== this.preflightGeneration) return;
       const transportError = toTransportError(error, 'session.connect', environment);
       this.fail(transportError);
     }
   }
 
   async disconnect(): Promise<void> {
+    this.preflightGeneration += 1;
     const transport = this.transport;
     this.transport = null;
 
@@ -203,64 +217,76 @@ export class DeviceSession {
       return;
     }
 
+    const generation = ++this.preflightGeneration;
+    const startedAt = Date.now();
+    let attempts = 0;
     const environment = environmentDetail();
     const transportKind = this.snapshot.transportKind ?? 'webserial';
     this.set({ captureState: 'capturing', preflight: undefined });
-    this.append({
-      kind: 'tx',
-      direction: 'tx',
-      transport: transportKind,
-      bytes: PREFLIGHT_FRAME,
-      message: 'Preflight tx',
-      detail: environment as Record<string, unknown>,
-    });
 
     try {
-      await transport.write(PREFLIGHT_FRAME);
+      await transport.flushInput();
     } catch (error) {
-      this.failPreflight(toTransportError(error, 'preflight.write'), environment);
+      this.failPreflight(toTransportError(error, 'preflight.flush'), environment);
       return;
     }
 
-    let raw: Uint8Array = new Uint8Array();
-    const deadline = Date.now() + 500;
+    let lastRaw: Uint8Array = new Uint8Array();
 
-    while (Date.now() < deadline) {
-      const remaining = Math.max(1, deadline - Date.now());
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      attempts = attempt;
+      if (attempt > 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, this.retryDelayMs));
+        if (!this.isCurrentPreflight(transport, generation)) return;
+      }
+
       try {
-        const chunk = await transport.readChunk(remaining);
-        if (chunk.length === 0) continue;
-        raw = concatBytes(raw, chunk);
-        this.append({
-          kind: 'rx',
-          direction: 'rx',
-          transport: transportKind,
-          bytes: chunk,
-          message: 'Preflight rx',
-          detail: environment as Record<string, unknown>,
-        });
-        if (parseResponse(raw).kind === 'valid') break;
-        if (raw.length > 512) break;
+        await transport.write(PREFLIGHT_FRAME);
+      } catch (error) {
+        this.failPreflight(toTransportError(error, 'preflight.write'), environment);
+        return;
+      }
+
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes: PREFLIGHT_FRAME,
+        message: attempt === 1 ? 'Preflight tx' : 'Preflight tx (NAK retry)',
+      });
+
+      let attemptRaw: Uint8Array;
+      try {
+        attemptRaw = await this.readPreflight(transport, transportKind, generation);
       } catch (error) {
         const transportError = toTransportError(error, 'preflight.read');
-        if (transportError.code === 'timeout') break;
+        if (!this.isCurrentPreflight(transport, generation)) return;
         this.failPreflight(transportError, environment);
         return;
       }
+
+      if (!this.isCurrentPreflight(transport, generation)) return;
+      lastRaw = attemptRaw;
+
+      if (attemptRaw.includes(0x15) && attempt === 1) {
+        this.append({
+          kind: 'info',
+          transport: transportKind,
+          message: 'NAK received; retrying preflight once',
+          detail: { bytesHex: toHex(attemptRaw) },
+        });
+        continue;
+      }
+      break;
     }
 
-    if (raw.length === 0) {
-      const detail = {
-        operation: 'preflight.read',
-        stage: 'timeout',
-        ...environment,
-      };
+    if (lastRaw.length === 0) {
       this.append({
         kind: 'error',
         code: 'timeout',
         message: 'No preflight response within 500 ms.',
         stage: 'timeout',
-        detail: detail as Record<string, unknown>,
+        detail: { operation: 'preflight.read', stage: 'timeout' },
       });
       this.set({
         captureState: 'failed',
@@ -269,7 +295,7 @@ export class DeviceSession {
       return;
     }
 
-    const outcome = parseResponse(raw);
+    const outcome = parseResponse(lastRaw);
     if (outcome.kind === 'valid') {
       const result: PreflightResult = {
         status: 'captured',
@@ -278,7 +304,10 @@ export class DeviceSession {
         secondaryStatusHex: outcome.frame.secondaryStatus
           ? toHex(outcome.frame.secondaryStatus)
           : undefined,
-        rawHex: toHex(raw),
+        rawHex: toHex(lastRaw),
+        txHex: toHex(PREFLIGHT_FRAME),
+        attempts,
+        elapsedMs: Date.now() - startedAt,
       };
       this.append({
         kind: 'info',
@@ -298,14 +327,13 @@ export class DeviceSession {
       return;
     }
 
-    const reason = outcome.kind === 'ambiguous' ? outcome.reason : outcome.reason;
     this.append({
       kind: 'info',
       transport: transportKind,
       message: 'Preflight capture-only',
       detail: {
-        reason,
-        rawHex: toHex(raw),
+        reason: outcome.reason,
+        rawHex: toHex(lastRaw),
         attempts: outcome.attempts,
         ...environment,
       },
@@ -314,10 +342,57 @@ export class DeviceSession {
       captureState: 'captureOnly',
       preflight: {
         status: 'captureOnly',
-        rawHex: toHex(raw),
-        reason,
+        rawHex: toHex(lastRaw),
+        txHex: toHex(PREFLIGHT_FRAME),
+        attempts,
+        elapsedMs: Date.now() - startedAt,
+        reason: outcome.reason,
       },
     });
+  }
+
+  private isCurrentPreflight(transport: DeviceTransport, generation: number): boolean {
+    return (
+      generation === this.preflightGeneration &&
+      this.transport === transport &&
+      this.snapshot.phase === 'connected'
+    );
+  }
+
+  private async readPreflight(
+    transport: DeviceTransport,
+    transportKind: TransportKind,
+    generation: number,
+  ): Promise<Uint8Array> {
+    let raw: Uint8Array = new Uint8Array();
+    const deadline = Date.now() + 500;
+
+    while (Date.now() < deadline) {
+      if (!this.isCurrentPreflight(transport, generation)) return raw;
+      const remaining = Math.max(1, deadline - Date.now());
+      let chunk: Uint8Array;
+      try {
+        chunk = await transport.readChunk(remaining);
+      } catch (error) {
+        const transportError = toTransportError(error, 'preflight.read');
+        if (transportError.code === 'timeout') break;
+        throw transportError;
+      }
+      if (!this.isCurrentPreflight(transport, generation)) return raw;
+      if (chunk.length === 0) continue;
+      raw = concatBytes(raw, chunk);
+      this.append({
+        kind: 'rx',
+        direction: 'rx',
+        transport: transportKind,
+        bytes: chunk,
+        message: 'Preflight rx',
+      });
+      if (chunk.includes(0x15)) break;
+      if (parseResponse(raw).kind === 'valid') break;
+      if (raw.length > 512) break;
+    }
+    return raw;
   }
 
   clearCapture(): void {

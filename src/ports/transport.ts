@@ -36,6 +36,7 @@ export interface TransportErrorDetail {
   flowControl?: string;
   userAgent?: string;
   platform?: string;
+  appVersion?: string;
 }
 
 export class TransportError extends Error {
@@ -104,7 +105,7 @@ export function toTransportError(
     errorName = error.name;
     errorMessage = diagnosticText(error.message);
     if (error.name === 'NotFoundError') {
-      code = 'permission-denied';
+      code = 'cancelled';
     } else if (error.name === 'SecurityError') {
       code = 'permission-denied';
     } else if (error.name === 'InvalidStateError') {

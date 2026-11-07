@@ -21,7 +21,9 @@ export class BrowserTransportSelector implements TransportSelector {
       });
     }
     try {
-      const port = await navigator.serial.requestPort();
+      const port = await navigator.serial.requestPort({
+        filters: [{ usbVendorId: 0xfff0, usbProductId: 0x0100 }],
+      });
       return new WebSerialTransport(port);
     } catch (error) {
       throw toTransportError(error, 'webserial.request-port', {

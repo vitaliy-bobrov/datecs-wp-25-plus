@@ -91,16 +91,20 @@ export class CaptureLog {
           entry.direction ?? '-',
           entry.bytesHex ?? '-',
           entry.code ?? '-',
-          entry.message ?? '-',
+          cell(entry.message),
           entry.stage ?? '-',
           entry.errorName ?? '-',
-          entry.errorMessage ?? '-',
+          cell(entry.errorMessage),
           entry.detail ? JSON.stringify(entry.detail) : '-',
         ];
         return parts.join('\t');
       })
       .join('\n');
   }
+}
+
+function cell(value: string | undefined): string {
+  return (value ?? '-').replace(/[\t\r\n]/g, ' ');
 }
 
 export function toHex(bytes: Uint8Array): string {

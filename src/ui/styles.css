@@ -12,6 +12,8 @@
   --accent: #155e63;
   --accent-ink: #ffffff;
   --danger: #9b2c2c;
+  --warning: #8a5a00;
+  --warning-bg: rgb(183 121 31 / 16%);
   --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
@@ -235,6 +237,10 @@ h2 {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
   padding: 10px 12px;
   font-size: 0.9rem;
+}
+.status-error {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 .log-wrap {

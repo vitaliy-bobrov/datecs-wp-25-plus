@@ -6,6 +6,8 @@ export interface NbpRate {
 
 export interface NbpTable {
   effectiveDate: string;
+  no?: string;
+  table?: string;
   rates: NbpRate[];
 }
 
@@ -91,10 +93,10 @@ export function parseNbpTables(raw: string): NbpTable[] {
 
     const rates: NbpRate[] = [];
     for (const rateEntry of record.rates) {
-      if (!rateEntry || typeof rateEntry !== 'object') continue;
-      const rate = rateEntry as Record<string, unknown>;
       const rawMid = rawMids[midIndex];
       midIndex += 1;
+      if (!rateEntry || typeof rateEntry !== 'object') continue;
+      const rate = rateEntry as Record<string, unknown>;
       if (rate.code !== 'USD' && rate.code !== 'EUR') continue;
       if (typeof rate.currency !== 'string') continue;
       const mid = typeof rate.mid === 'string' ? rate.mid : (rawMid ?? '');
@@ -102,7 +104,14 @@ export function parseNbpTables(raw: string): NbpTable[] {
       rates.push({ code: rate.code, currency: rate.currency, mid });
     }
 
-    if (rates.length === 2) tables.push({ effectiveDate: record.effectiveDate, rates });
+    if (rates.length === 2) {
+      tables.push({
+        effectiveDate: record.effectiveDate,
+        no: typeof record.no === 'string' ? record.no : undefined,
+        table: typeof record.table === 'string' ? record.table : undefined,
+        rates,
+      });
+    }
   }
 
   if (tables.length === 0) {
