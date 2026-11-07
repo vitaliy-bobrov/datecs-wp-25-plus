@@ -23,6 +23,7 @@ interface WebSerialPort {
 
 interface WebSerialManager {
   requestPort(options?: { filters?: WebSerialPortInfo[] }): Promise<WebSerialPort>;
+  getPorts(): Promise<WebSerialPort[]>;
 }
 
 interface WebLock {

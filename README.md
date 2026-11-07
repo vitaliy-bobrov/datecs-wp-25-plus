@@ -1,6 +1,6 @@
-# Datecs WP-25 Plus — capture shell
+# Datecs WP-25 Plus — currency reader
 
-Web Serial or simulator capture shell: a deployable Vite/React/TypeScript app with connection diagnostics, the known short preflight, a Type2 response logger and an NBP USD/EUR reference panel. It sends no currency read or write.
+Read-only Vite/React/TypeScript app with connection diagnostics, the known short preflight, the exact captured local PLN read, an experimental foreign-slot read and an NBP USD/EUR reference panel. It sends no `0xFF` and no write.
 
 ## Develop
 
@@ -39,7 +39,7 @@ Hardware:
 1. Choose **Connect Web Serial** and select the cashier.
 2. Click **Run preflight**.
 3. Download the JSONL and/or text log.
-4. Confirm the log contains the exact preflight tx and the raw Type2 response, with no currency read or write.
+4. Confirm the preflight tx/rx; then use Read local currencies and the experimental foreign read. No write is sent.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -79,9 +79,9 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 ## Current scope
 
-Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, captures and validates the I90 Type2 response, and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`, currency read or write.
+Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, reads the confirmed local PLN values, probes the two foreign slots (name and raw rate) and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF` and no write. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
-The write epic remains gated on a non-production test device or an approved-risk decision. Foreign slot and converter reads are not supported by the captured sequence.
+The write epic remains gated on a non-production test device or an approved-risk decision. Converter read is not implemented.
 
 ## License
 

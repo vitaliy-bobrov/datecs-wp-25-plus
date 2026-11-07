@@ -56,12 +56,19 @@ function nibbles(value: number): number[] {
   });
 }
 
-export function buildForeignNameProbe(): Uint8Array {
-  const data = new TextEncoder().encode('CurrNameForeign\t0\t\t');
+type ForeignReadFrameLabel = 'slot0Name' | 'slot0Rate' | 'slot1Name' | 'slot1Rate';
+
+export interface ForeignReadFrame {
+  label: ForeignReadFrameLabel;
+  bytes: Uint8Array;
+}
+
+function buildReadQuery(parameter: string, delimiter: number): Uint8Array {
+  const data = new TextEncoder().encode(parameter);
   const prefix = [
     0x01,
     ...nibbles(data.length + 0x2a),
-    0x27,
+    delimiter,
     ...new TextEncoder().encode('00??'),
     ...data,
     0x05,
@@ -69,6 +76,13 @@ export function buildForeignNameProbe(): Uint8Array {
   const checksum = sumFromStxToEnq(Uint8Array.from(prefix), prefix.length - 1);
   return Uint8Array.from([...prefix, ...nibbles(checksum), 0x03]);
 }
+
+export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [
+  { label: 'slot0Name', bytes: buildReadQuery('CurrNameForeign\t0\t\t', 0x27) },
+  { label: 'slot0Rate', bytes: buildReadQuery('ExchangeRate\t0\t\t', 0x28) },
+  { label: 'slot1Name', bytes: buildReadQuery('CurrNameForeign\t1\t\t', 0x29) },
+  { label: 'slot1Rate', bytes: buildReadQuery('ExchangeRate\t1\t\t', 0x2a) },
+];
 
 export function parseReadResponse(input: Uint8Array): ReadResponse | null {
   let offset = 0;

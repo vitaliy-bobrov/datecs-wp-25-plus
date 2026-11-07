@@ -114,10 +114,10 @@ export function App({ session }: AppProps) {
       <header className="header">
         <div>
           <p className="eyebrow">Datecs WP-25 Plus</p>
-          <h1>Capture shell</h1>
+          <h1>Currency reader</h1>
           <p className="lede">
-            Read-only Web Serial or simulator connection, preflight capture, Type2 logger and NBP
-            reference. This build sends only the known preflight — no currency read or write.
+            Read-only Web Serial connection with preflight, exact local PLN read, experimental
+            foreign slots and NBP reference. No <code>0xFF</code> and no write.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -214,8 +214,8 @@ export function App({ session }: AppProps) {
           <div>
             <h2 id="preflight-heading">Preflight</h2>
             <p className="muted">
-              Sends the captured short preflight; raw response capture only. No <code>0xFF</code>,
-              currency read or write.
+              Sends the captured short preflight. Currency reads are separate; no <code>0xFF</code>
+              or write.
             </p>
           </div>
           <span className={`state state-${stateClass(snapshot.captureState)}`}>
@@ -271,8 +271,8 @@ export function App({ session }: AppProps) {
             <div>
               <h3>Local currency read</h3>
               <p className="muted">
-                Replays the exact ECR Tool read sequence. Local PLN only; the probe below tests
-                whether the foreign name is readable.
+                Replays the exact ECR Tool read sequence. Local PLN is confirmed; the foreign read
+                below is experimental.
               </p>
             </div>
             <span className={`state state-${stateClass(snapshot.readState)}`}>
@@ -320,33 +320,41 @@ export function App({ session }: AppProps) {
           <div className="foreign-probe">
             <div className="card-heading">
               <div>
-                <h4>Foreign name probe</h4>
+                <h4>Foreign slots</h4>
                 <p className="muted">
-                  One read-only query for <code>CurrNameForeign</code> slot 0. No <code>0xFF</code>,
-                  no write. If it returns an error, the foreign record is write-only.
+                  Reads name and raw rate for slots 0 and 1. No <code>0xFF</code>, no write. This is
+                  experimental until the rate query is confirmed on hardware.
                 </p>
               </div>
-              <span className={`state state-${stateClass(snapshot.foreignProbeState)}`}>
-                {stateLabel(snapshot.foreignProbeState)}
+              <span className={`state state-${stateClass(snapshot.foreignReadState)}`}>
+                {stateLabel(snapshot.foreignReadState)}
               </span>
             </div>
             <button
               type="button"
               className="button"
-              onClick={() => void session.runForeignProbe()}
-              disabled={!snapshot.localRead || snapshot.foreignProbeState === 'probing'}
+              onClick={() => void session.runReadForeign()}
+              disabled={!snapshot.localRead || snapshot.foreignReadState === 'reading'}
             >
-              {snapshot.foreignProbeState === 'probing' ? 'Probing…' : 'Probe foreign name'}
+              {snapshot.foreignReadState === 'reading' ? 'Reading…' : 'Read foreign slots'}
             </button>
-            {snapshot.foreignProbe ? (
+            {snapshot.foreignRead ? (
               <dl className="read-values">
                 <div>
-                  <dt>Response fields</dt>
-                  <dd>{snapshot.foreignProbe.fields.join(' · ') || 'empty'}</dd>
+                  <dt>Slot 0 name</dt>
+                  <dd>{snapshot.foreignRead.slot0Name ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Raw response</dt>
-                  <dd className="probe-raw">{snapshot.foreignProbe.rawHex}</dd>
+                  <dt>Slot 0 rate</dt>
+                  <dd>{snapshot.foreignRead.slot0Rate ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 1 name</dt>
+                  <dd>{snapshot.foreignRead.slot1Name ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 1 rate</dt>
+                  <dd>{snapshot.foreignRead.slot1Rate ?? '—'}</dd>
                 </div>
               </dl>
             ) : null}
@@ -449,8 +457,8 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Web Serial or simulator preflight capture only. No currency read, 0xFF or write is
-          implemented.
+          Read-only local and experimental foreign-slot reads. No converter read, <code>0xFF</code>
+          or write is implemented.
         </p>
       </footer>
     </main>

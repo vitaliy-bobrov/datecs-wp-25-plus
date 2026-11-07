@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { bccMatches, sumFromStxToEnq } from './preflight';
-import { buildForeignNameProbe, parseReadResponse, READ_LOCAL_FRAMES } from './read-currencies';
+import { FOREIGN_READ_FRAMES, parseReadResponse, READ_LOCAL_FRAMES } from './read-currencies';
 
 const response = (hex: string) =>
   Uint8Array.from((hex.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16)));
@@ -42,14 +42,22 @@ describe('local currency read protocol', () => {
 });
 
 describe('foreign read probe', () => {
-  it('builds one Type2 read query without 0xFF', () => {
-    const frame = buildForeignNameProbe();
-    expect(frame[0]).toBe(0x01);
-    expect(frame[frame.length - 1]).toBe(0x03);
-    expect(frame.includes(0xff)).toBe(false);
-    expect(new TextDecoder().decode(frame)).toContain('CurrNameForeign');
-    expect(frame).toHaveLength(35);
-    const enq = frame.length - 6;
-    expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
+  it('builds four Type2 read queries without 0xFF', () => {
+    expect(FOREIGN_READ_FRAMES).toHaveLength(4);
+    expect(FOREIGN_READ_FRAMES.map((frame) => frame.label)).toEqual([
+      'slot0Name',
+      'slot0Rate',
+      'slot1Name',
+      'slot1Rate',
+    ]);
+    for (const { bytes: frame } of FOREIGN_READ_FRAMES) {
+      expect(frame[0]).toBe(0x01);
+      expect(frame[frame.length - 1]).toBe(0x03);
+      expect(frame.includes(0xff)).toBe(false);
+      const enq = frame.length - 6;
+      expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
+    }
+    expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[0]?.bytes)).toContain('CurrNameForeign');
+    expect(new TextDecoder().decode(FOREIGN_READ_FRAMES[1]?.bytes)).toContain('ExchangeRate');
   });
 });

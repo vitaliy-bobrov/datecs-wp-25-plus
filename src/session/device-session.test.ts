@@ -72,6 +72,20 @@ class FakeSelector implements TransportSelector {
   });
 }
 
+class FailingOpenTransport extends FakeTransport {
+  override async open(): Promise<TransportInfo> {
+    throw new TransportError('device-unavailable', 'saved port is gone');
+  }
+}
+
+class RetrySelector implements TransportSelector {
+  readonly select = vi.fn(async (_kind: TransportKind, _options?: { preferSaved?: boolean }) => {
+    this.calls += 1;
+    return this.calls === 1 ? new FailingOpenTransport() : new FakeTransport();
+  });
+  calls = 0;
+}
+
 describe('DeviceSession', () => {
   it('connects and disconnects, logging the lifecycle', async () => {
     const lock = new FakeLock();
@@ -89,6 +103,18 @@ describe('DeviceSession', () => {
     await session.disconnect();
     expect(session.getSnapshot().phase).toBe('idle');
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'disconnect')).toBe(true);
+  });
+
+  it('retries with the picker when a saved port cannot be opened', async () => {
+    const selector = new RetrySelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+
+    await session.acquireLock();
+    await session.connect();
+
+    expect(selector.select).toHaveBeenNthCalledWith(1, 'webserial');
+    expect(selector.select).toHaveBeenNthCalledWith(2, 'webserial', { preferSaved: false });
+    expect(session.getSnapshot().phase).toBe('connected');
   });
 
   it('refuses to connect when the device lock is not held', async () => {
@@ -344,21 +370,31 @@ describe('DeviceSession', () => {
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
 
     const status = Uint8Array.from([0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80]);
-    const body = Uint8Array.from([
-      0x01,
-      ...new TextEncoder().encode("0039'00??0\tEUR\t"),
-      0x04,
-      ...status,
-      0x05,
-    ]);
-    const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
-    const bcc = Array.from({ length: 4 }, (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f));
-    transport.rx.push(Uint8Array.from([...body, ...bcc, 0x03]));
+    for (const value of ['USD', '392100', 'EUR', '439250']) {
+      const body = Uint8Array.from([
+        0x01,
+        ...new TextEncoder().encode(`0039'00??0\t${value}\t`),
+        0x04,
+        ...status,
+        0x05,
+      ]);
+      const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
+      const bcc = Array.from(
+        { length: 4 },
+        (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f),
+      );
+      transport.rx.push(Uint8Array.from([...body, ...bcc, 0x03]));
+    }
 
-    await session.runForeignProbe();
-    expect(session.getSnapshot().foreignProbeState).toBe('probed');
-    expect(session.getSnapshot().foreignProbe?.fields).toEqual(['EUR']);
-    expect(transport.written).toHaveLength(2 + READ_LOCAL_FRAMES.length);
+    await session.runReadForeign();
+    expect(session.getSnapshot().foreignReadState).toBe('read');
+    expect(session.getSnapshot().foreignRead).toMatchObject({
+      slot0Name: 'USD',
+      slot0Rate: '392100',
+      slot1Name: 'EUR',
+      slot1Rate: '439250',
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 4);
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 

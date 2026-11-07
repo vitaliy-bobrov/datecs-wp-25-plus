@@ -72,8 +72,12 @@ export interface DeviceTransport {
   flushInput(): Promise<void>;
 }
 
+export interface SelectOptions {
+  preferSaved?: boolean;
+}
+
 export interface TransportSelector {
-  select(kind: TransportKind): Promise<DeviceTransport>;
+  select(kind: TransportKind, options?: SelectOptions): Promise<DeviceTransport>;
 }
 
 function diagnosticText(value: string): string {
