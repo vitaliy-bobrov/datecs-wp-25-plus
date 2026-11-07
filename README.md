@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — currency reader
 
-Vite/React/TypeScript app with connection diagnostics, the known short preflight, local/foreign/converter reads, an NBP comparison and update preview. It sends no `0xFF`; the only write is an explicit one-field full-name diagnostic test with readback and restore.
+Vite/React/TypeScript app with connection diagnostics, the known short preflight, local/foreign/converter reads, an NBP comparison and update preview. It sends no `0xFF` and no rate write; the only write is an explicit slot-0 full-name diagnostic test with readback and restore.
 
 ## Develop
 
@@ -30,7 +30,7 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 
 Simulator:
 
-1. Open the Pages URL in the browser with the cashier attached.
+1. Open the Pages URL in the browser.
 2. Choose **Open simulator**.
 3. Click **Run preflight** and confirm `captured · type2` with the exact tx/rx bytes.
 
@@ -39,7 +39,7 @@ Hardware:
 1. Choose **Connect Web Serial** and select the cashier.
 2. Click **Run preflight**.
 3. Download the JSONL and/or text log.
-4. Confirm the preflight tx/rx; then use Read local currencies and the experimental foreign read. No write is sent.
+4. Confirm the preflight tx/rx; then use Read local currencies and the experimental foreign read. No rate write is sent; the one-field full-name test is separate and requires explicit confirmation.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -47,7 +47,7 @@ Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:
 01 30 30 32 3a 20 30 30 34 3a 05 30 31 3b 3f 03
 ```
 
-Response timeout: 500 ms; NAK retry: once after 3000 ms; ambiguous or unrecognised frames are preserved as `captureOnly`.
+Preflight timeout: 500 ms; NAK retry: once after 3000 ms; ambiguous or unrecognised preflight frames are preserved as `captureOnly`. Read-frame failures are logged without a capture-only fallback.
 
 WebUSB is not supported. Web Serial is the only supported transport.
 
@@ -69,10 +69,10 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 - `src/app` — composition and external NBP client wiring
 - `src/adapters` — Web Serial, simulator and NBP HTTP adapters
-- `src/domain` — capture log, NBP selection/staleness
-- `src/ports` — transport, clock, lock and capture contracts
-- `src/protocol` — preflight bytes and Type2/wrapped response parsing
-- `src/session` — connection, lock and preflight orchestration
+- `src/domain` — capture log, NBP selection/staleness, rate normalization and update preview
+- `src/ports` — transport, clock, lock and error contracts
+- `src/protocol` — preflight, local/foreign/converter reads and the one-field write frame
+- `src/session` — connection, lock, read sequences, comparison state and the guarded write test
 - `src/ui` — one-page operator UI
 
 **NBP** means Narodowy Bank Polski. **I90 Type2** is the short ASCII handshake response observed from the WP-25 Plus. The **short preflight** means the `002: 004:` request, not the response `short` candidate mode.
@@ -81,12 +81,13 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, reads the confirmed local PLN values, reads the two foreign slots (name, full name, four-decimal rate and Change-after-Z flag) and compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only write is an explicit slot-0 full-name test with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
-An update preview shows the exact four-decimal targets from NBP against the read records. The write epic remains gated on the write-frame capture and a non-production test device or an approved-risk decision; no write is implemented.
+An update preview shows the exact four-decimal targets from NBP against the read records. The only device write is the explicitly confirmed slot-0 full-name marker/restore test; rate, multi-field and converter writes are not implemented.
+
+
+## Boundary validation
+
+Knip is the boundary gate: `knip.json` declares the project globs; Knip derives entry points from Vite/index.html, and CI fails on unused files, exports, exported types or dependencies. Remove dead modules rather than suppressing them.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
-
-## Boundary validation
-
-Knip is the boundary gate: `knip.json` declares the app entry points, and CI fails on unused files, exports, exported types or dependencies. Remove dead modules rather than suppressing them.

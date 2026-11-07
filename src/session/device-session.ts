@@ -108,11 +108,14 @@ export interface SessionSnapshot {
   capture: readonly CaptureEntry[];
 }
 
+const READ_TIMEOUT_MS = 500;
+
 const PUBLIC_ERROR: Record<TransportErrorCode, string> = {
   unsupported: 'This browser or device does not support the selected transport.',
   'permission-denied': 'Device permission was not granted.',
   cancelled: 'No device was selected.',
   'device-unavailable': 'The device is unavailable or disconnected.',
+  'protocol-error': 'The device response was not a valid protocol frame.',
   'open-failed': 'The device could not be opened.',
   'close-failed': 'The device did not close cleanly.',
   'device-in-use': 'Another tab already owns the device session.',
@@ -135,6 +138,10 @@ function concatBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
   merged.set(left);
   merged.set(right, left.length);
   return merged;
+}
+
+function responseMatchesRequest(header: string, request: Uint8Array): boolean {
+  return header.length >= 5 && header[4] === String.fromCharCode(request[5] ?? 0);
 }
 
 export class DeviceSession {
@@ -234,6 +241,18 @@ export class DeviceSession {
           (firstError.code === 'device-unavailable' || firstError.code === 'open-failed');
         if (!canRetryPicker) throw error;
 
+        this.append({
+          kind: 'info',
+          transport: kind,
+          message: 'Saved device could not open; opening the device picker.',
+          detail: {
+            code: firstError.code,
+            stage: firstError.detail?.stage,
+            errorName: firstError.detail?.errorName,
+            errorMessage: firstError.detail?.errorMessage,
+            ...environment,
+          },
+        });
         await transport.close().catch(() => undefined);
         transport = await this.selector.select(kind, { preferSaved: false });
         info = await transport.open();
@@ -305,13 +324,20 @@ export class DeviceSession {
     });
   }
 
+  private isDeviceBusy(): boolean {
+    const snapshot = this.snapshot;
+    return (
+      snapshot.captureState === 'capturing' ||
+      snapshot.readState === 'reading' ||
+      snapshot.foreignReadState === 'reading' ||
+      snapshot.converterReadState === 'reading' ||
+      snapshot.writeTestState === 'writing'
+    );
+  }
+
   async runPreflight(): Promise<void> {
     const transport = this.transport;
-    if (
-      this.snapshot.phase !== 'connected' ||
-      !transport ||
-      this.snapshot.captureState === 'capturing'
-    ) {
+    if (this.snapshot.phase !== 'connected' || !transport || this.isDeviceBusy()) {
       return;
     }
 
@@ -323,8 +349,14 @@ export class DeviceSession {
     this.set({
       captureState: 'capturing',
       readState: 'idle',
+      foreignReadState: 'idle',
+      converterReadState: 'idle',
+      writeTestState: 'idle',
       preflight: undefined,
       localRead: undefined,
+      foreignRead: undefined,
+      converterRead: undefined,
+      writeTest: undefined,
     });
 
     try {
@@ -468,7 +500,7 @@ export class DeviceSession {
     generation: number,
   ): Promise<Uint8Array> {
     let raw: Uint8Array = new Uint8Array();
-    const deadline = Date.now() + 500;
+    const deadline = Date.now() + READ_TIMEOUT_MS;
 
     while (Date.now() < deadline) {
       if (!this.isCurrentPreflight(transport, generation)) return raw;
@@ -505,7 +537,7 @@ export class DeviceSession {
       !transport ||
       this.snapshot.transportKind !== 'webserial' ||
       this.snapshot.captureState !== 'captured' ||
-      this.snapshot.readState === 'reading'
+      this.isDeviceBusy()
     ) {
       return;
     }
@@ -580,7 +612,9 @@ export class DeviceSession {
       !transport ||
       this.snapshot.transportKind !== 'webserial' ||
       this.snapshot.readState !== 'read' ||
-      this.snapshot.foreignReadState === 'reading'
+      this.snapshot.foreignReadState === 'reading' ||
+      this.snapshot.converterReadState === 'reading' ||
+      this.snapshot.writeTestState === 'writing'
     ) {
       return;
     }
@@ -662,7 +696,8 @@ export class DeviceSession {
       !transport ||
       this.snapshot.transportKind !== 'webserial' ||
       this.snapshot.foreignReadState !== 'read' ||
-      this.snapshot.converterReadState === 'reading'
+      this.snapshot.converterReadState === 'reading' ||
+      this.snapshot.writeTestState === 'writing'
     ) {
       return;
     }
@@ -759,10 +794,11 @@ export class DeviceSession {
 
       let raw: Uint8Array;
       try {
-        raw = await this.readLocalResponse(
+        raw = await this.readResponseBytes(
           transport,
           transportKind,
           generation,
+          `${operation}.read`,
           `${messagePrefix} rx`,
         );
       } catch (error) {
@@ -786,7 +822,7 @@ export class DeviceSession {
         this.append({
           kind: 'error',
           code: 'timeout',
-          message: `No response for ${frame.label} within 500 ms.`,
+          message: `No response for ${frame.label} within ${READ_TIMEOUT_MS} ms.`,
           stage: 'timeout',
           detail: { operation: `${operation}.read`, stage: 'timeout' },
         });
@@ -797,10 +833,20 @@ export class DeviceSession {
       if (!parsed) {
         this.append({
           kind: 'error',
-          code: 'device-unavailable',
+          code: 'protocol-error',
           message: `The ${frame.label} response was not a valid Type2 frame.`,
           stage: 'parse',
           errorMessage: toHex(raw),
+        });
+        return null;
+      }
+      if (!responseMatchesRequest(parsed.header, frame.bytes)) {
+        this.append({
+          kind: 'error',
+          code: 'protocol-error',
+          message: `The ${frame.label} response delimiter did not match the request.`,
+          stage: 'sequence',
+          errorMessage: `${parsed.header} vs ${toHex(frame.bytes.slice(5, 6))}`,
         });
         return null;
       }
@@ -810,14 +856,15 @@ export class DeviceSession {
     return results;
   }
 
-  private async readLocalResponse(
+  private async readResponseBytes(
     transport: DeviceTransport,
     transportKind: TransportKind,
     generation: number,
-    message = 'Read local rx',
+    operation = 'local-read.read',
+    message = 'Read response rx',
   ): Promise<Uint8Array> {
     let raw: Uint8Array = new Uint8Array();
-    const deadline = Date.now() + 500;
+    const deadline = Date.now() + READ_TIMEOUT_MS;
 
     while (Date.now() < deadline) {
       if (!this.isCurrentPreflight(transport, generation)) return raw;
@@ -826,7 +873,7 @@ export class DeviceSession {
       try {
         chunk = await transport.readChunk(remaining);
       } catch (error) {
-        const transportError = toTransportError(error, 'local-read.read');
+        const transportError = toTransportError(error, operation);
         if (transportError.code === 'timeout') break;
         throw transportError;
       }
@@ -863,11 +910,13 @@ export class DeviceSession {
       return;
     }
 
-    const temporary = `${original} T`;
-    const writeTemporary = buildFullNameWrite(temporary, 0x32);
-    const readTemporary = buildFullNameReadback(0x33);
-    const writeRestore = buildFullNameWrite(original, 0x34);
-    const readRestore = buildFullNameReadback(0x35);
+    const first = original[0] === 'X' ? 'Y' : 'X';
+    const temporary = `${first}${original.slice(1)}`;
+    const readPrecheck = buildFullNameReadback(0x32);
+    const writeTemporary = buildFullNameWrite(temporary, 0x33);
+    const readTemporary = buildFullNameReadback(0x34);
+    const writeRestore = buildFullNameWrite(original, 0x35);
+    const readRestore = buildFullNameReadback(0x36);
     if (!writeTemporary || !writeRestore) {
       this.set({
         writeTestState: 'failed',
@@ -876,7 +925,7 @@ export class DeviceSession {
           original,
           temporary,
           restored: true,
-          message: 'The full name contains characters outside Windows-1250.',
+          message: 'The full name contains characters unsupported by the Polish CP1250 encoder.',
         },
       });
       return;
@@ -888,7 +937,7 @@ export class DeviceSession {
     let temporaryAttempted = false;
     let temporaryReadback: string | undefined;
     let restoredReadback: string | undefined;
-    let restored = false;
+    let restored = true;
     this.set({ writeTestState: 'writing', writeTest: undefined });
 
     const sendWrite = async (bytes: Uint8Array, label: string): Promise<void> => {
@@ -901,15 +950,20 @@ export class DeviceSession {
         bytes,
         message: `Write test: ${label}`,
       });
-      const raw = await this.readLocalResponse(
+      const raw = await this.readResponseBytes(
         transport,
         transportKind,
         generation,
+        'write-test.write',
         'Write test response',
       );
       if (!this.isCurrentPreflight(transport, generation)) throw new Error('Session changed.');
-      if (raw.length === 0) throw new Error('No write response within 500 ms.');
-      if (!parseReadResponse(raw)) throw new Error('Write response was not a valid Type2 frame.');
+      if (raw.length === 0) throw new Error(`No write response within ${READ_TIMEOUT_MS} ms.`);
+      const parsed = parseReadResponse(raw);
+      if (!parsed) throw new Error('Write response was not a valid Type2 frame.');
+      if (!responseMatchesRequest(parsed.header, bytes)) {
+        throw new Error('Write response delimiter did not match the request.');
+      }
     };
 
     const readName = async (bytes: Uint8Array, label: string): Promise<string> => {
@@ -921,17 +975,21 @@ export class DeviceSession {
         bytes,
         message: `Write test readback: ${label}`,
       });
-      const raw = await this.readLocalResponse(
+      const raw = await this.readResponseBytes(
         transport,
         transportKind,
         generation,
+        'write-test.readback',
         'Write test readback',
       );
       if (!this.isCurrentPreflight(transport, generation)) throw new Error('Session changed.');
-      if (raw.length === 0) throw new Error('No readback within 500 ms.');
+      if (raw.length === 0) throw new Error(`No readback within ${READ_TIMEOUT_MS} ms.`);
       const parsed = parseReadResponse(raw);
-      const value = parsed?.fields[0];
-      if (value === undefined) throw new Error('Readback was not a valid Type2 frame.');
+      if (!parsed || !responseMatchesRequest(parsed.header, bytes)) {
+        throw new Error('Readback was not a valid Type2 frame.');
+      }
+      const value = parsed.fields[0];
+      if (value === undefined) throw new Error('Readback did not contain a value.');
       return value;
     };
 
@@ -949,7 +1007,13 @@ export class DeviceSession {
         },
       });
 
+      const fresh = await readName(readPrecheck, 'fresh current value');
+      if (fresh !== original) {
+        throw new Error(`Full name changed since the read: ${fresh}`);
+      }
+
       temporaryAttempted = true;
+      restored = false;
       await sendWrite(writeTemporary, 'temporary full name');
       temporaryReadback = await readName(readTemporary, 'temporary value');
       if (temporaryReadback !== temporary) {
@@ -1026,6 +1090,7 @@ export class DeviceSession {
   }
 
   clearCapture(): void {
+    if (this.isDeviceBusy()) return;
     this.capture.clear();
     this.snapshot = {
       ...this.snapshot,

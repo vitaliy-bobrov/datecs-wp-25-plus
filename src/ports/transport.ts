@@ -5,6 +5,7 @@ export type TransportErrorCode =
   | 'permission-denied'
   | 'cancelled'
   | 'device-unavailable'
+  | 'protocol-error'
   | 'open-failed'
   | 'close-failed'
   | 'device-in-use'
@@ -127,6 +128,7 @@ export function toTransportError(
     'permission-denied': 'Device permission was not granted.',
     cancelled: 'No device was selected.',
     'device-unavailable': 'The device is unavailable or disconnected.',
+    'protocol-error': 'The device response was not a valid protocol frame.',
     'open-failed': 'The device could not be opened.',
     'close-failed': 'The device did not close cleanly.',
     'device-in-use': 'Another tab already owns the device session.',

@@ -1,31 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryStorage } from '../test/storage';
 import { BrowserTransportSelector } from './browser-transport-selector';
-import { rememberPort } from './last-device';
+import { readLastDevice, rememberPort } from './last-device';
 import { SimulatorTransport } from './simulator-transport';
 
 const port = {} as WebSerialPort;
-
-class MemoryStorage {
-  private readonly entries = new Map<string, string>();
-  get length(): number {
-    return this.entries.size;
-  }
-  clear(): void {
-    this.entries.clear();
-  }
-  getItem(key: string): string | null {
-    return this.entries.get(key) ?? null;
-  }
-  key(index: number): string | null {
-    return [...this.entries.keys()][index] ?? null;
-  }
-  removeItem(key: string): void {
-    this.entries.delete(key);
-  }
-  setItem(key: string, value: string): void {
-    this.entries.set(key, value);
-  }
-}
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -52,6 +31,18 @@ describe('BrowserTransportSelector', () => {
     expect(requestPort).toHaveBeenCalledWith({
       filters: [{ usbVendorId: 0xfff0, usbProductId: 0x0100 }],
     });
+  });
+
+  it('remembers the port chosen through the picker', async () => {
+    const picked = {
+      getInfo: () => ({ usbVendorId: 0xfff0, usbProductId: 0x0100 }),
+    } as WebSerialPort;
+    const requestPort = vi.fn(async () => picked);
+    vi.stubGlobal('navigator', { serial: { requestPort, getPorts: vi.fn(async () => []) } });
+
+    await new BrowserTransportSelector().select('webserial');
+
+    expect(readLastDevice()).toMatchObject({ vendorId: 0xfff0, productId: 0x0100 });
   });
 
   it('reuses a previously granted matching port without opening the picker', async () => {

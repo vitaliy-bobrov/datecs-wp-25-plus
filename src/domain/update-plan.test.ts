@@ -37,6 +37,33 @@ describe('update preview plan', () => {
     });
   });
 
+  it('keeps a missing current rate as unavailable, not zero', () => {
+    const plan = buildUpdatePlan({
+      foreign: { ...foreign, slot0Rate: undefined },
+      converter,
+      nbp: { USD: '3.9321', EUR: '4.3925' },
+      printConverter: true,
+    });
+    expect(plan?.usd.current).toBeNull();
+    expect(plan?.usd.difference).toBeNull();
+    expect(plan?.usd.percent).toBeNull();
+  });
+
+  it('reports converter-name, rate and print-flag warnings', () => {
+    const plan = buildUpdatePlan({
+      foreign,
+      converter: { name: 'Konwerter', rate: '39000', printFlag: '0' },
+      nbp: { USD: '3.9321', EUR: '4.3925' },
+      printConverter: true,
+    });
+    expect(plan?.converter).toMatchObject({ name: 'Konwerter', printChanged: true });
+    expect(plan?.warnings).toEqual([
+      'Converter is named Konwerter, not USD.',
+      'Converter rate differs from the USD slot target.',
+      'Print-converter flag will change.',
+    ]);
+  });
+
   it('returns null when a code or NBP mid is missing', () => {
     expect(
       buildUpdatePlan({

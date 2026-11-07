@@ -1,5 +1,7 @@
+import type { CurrencyCode } from './rates';
+
 interface NbpRate {
-  code: 'USD' | 'EUR';
+  code: CurrencyCode;
   currency: string;
   mid: string;
 }

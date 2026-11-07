@@ -3,7 +3,7 @@ import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
 import { errorMessage } from '../domain/nbp';
-import type { CurrencyCode } from '../domain/rates';
+import { type CurrencyCode, formatFlag, formatRateValue, parseRawRate } from '../domain/rates';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { captureDownload, downloadText } from './download';
@@ -18,14 +18,8 @@ interface AppProps {
 
 function formatRate(value: string | undefined): string {
   if (!value) return '—';
-  if (!/^\d+$/.test(value)) return value;
-  return `${(Number(value) / 10000).toFixed(4)} (raw ${value})`;
-}
-
-function yesNo(value: string | undefined): string {
-  if (value === '1') return 'Yes';
-  if (value === '0') return 'No';
-  return value ?? '—';
+  const rate = parseRawRate(value);
+  return rate === null ? value : `${formatRateValue(rate)} (raw ${value})`;
 }
 
 const TRANSPORT_LABEL: Record<TransportKind, string> = {
@@ -104,12 +98,17 @@ export function App({ session }: AppProps) {
     }
     return rates;
   }, [snapshot.foreignRead]);
-  const busy = snapshot.captureState === 'capturing';
+  const deviceBusy =
+    snapshot.captureState === 'capturing' ||
+    snapshot.readState === 'reading' ||
+    snapshot.foreignReadState === 'reading' ||
+    snapshot.converterReadState === 'reading' ||
+    snapshot.writeTestState === 'writing';
 
-  const canPreflight = snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
+  const canPreflight = snapshot.phase === 'connected' && !deviceBusy;
 
   const clearCapture = () => {
-    if (busy) return;
+    if (deviceBusy) return;
     if (window.confirm('Clear the device log and preflight result?')) {
       session.clearCapture();
       setCopyState('idle');
@@ -127,9 +126,10 @@ export function App({ session }: AppProps) {
       `One-field production write test.\n\n` +
         `Field: slot 0 full name\n` +
         `Current: ${original}\n` +
-        `Temporary: ${original} T\n\n` +
-        `It will write the temporary name, read it back, restore the original, and read it back again. ` +
-        `No rate, short name, flag or converter value is touched. Continue?`,
+        `Temporary: ${original[0] === 'X' ? 'Y' : 'X'}${original.slice(1)}\n\n` +
+        `It will read the current value again, write the temporary name, read it back, restore the original, ` +
+        `and read it back again. No rate, short name, flag or converter value is touched. ` +
+        `If restore fails, the cashier may keep the temporary name. Continue?`,
     );
     if (approved) void session.runFullNameWriteTest();
   };
@@ -204,7 +204,7 @@ export function App({ session }: AppProps) {
                 type="button"
                 className="button"
                 onClick={() => void session.disconnect()}
-                disabled={snapshot.phase === 'idle'}
+                disabled={snapshot.phase === 'idle' || deviceBusy}
               >
                 Disconnect
               </button>
@@ -333,28 +333,36 @@ export function App({ session }: AppProps) {
           </button>
 
           {snapshot.localRead ? (
-            <dl className="read-values">
-              <div>
-                <dt>Barcode</dt>
-                <dd>{snapshot.localRead.barcode ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Local name</dt>
-                <dd>{snapshot.localRead.localName ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Currency date</dt>
-                <dd>{snapshot.localRead.currencyDate ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Programmed local</dt>
-                <dd>{snapshot.localRead.pgmLocalName ?? '—'}</dd>
-              </div>
-              <div>
-                <dt>Programmed date</dt>
-                <dd>{snapshot.localRead.pgmCurrencyDate ?? '—'}</dd>
-              </div>
-            </dl>
+            <>
+              <dl className="read-values">
+                <div>
+                  <dt>Barcode</dt>
+                  <dd>{snapshot.localRead.barcode ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Local name</dt>
+                  <dd>{snapshot.localRead.localName ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Currency date</dt>
+                  <dd>{snapshot.localRead.currencyDate ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Programmed local</dt>
+                  <dd>{snapshot.localRead.pgmLocalName ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Programmed date</dt>
+                  <dd>{snapshot.localRead.pgmCurrencyDate ?? '—'}</dd>
+                </div>
+              </dl>
+              {snapshot.localRead.rawFrames?.length ? (
+                <details className="raw-frames">
+                  <summary>Raw frames</summary>
+                  <pre>{snapshot.localRead.rawFrames.join('\n')}</pre>
+                </details>
+              ) : null}
+            </>
           ) : null}
 
           <div className="foreign-probe">
@@ -374,45 +382,53 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => void session.runReadForeign()}
-              disabled={!snapshot.localRead || snapshot.foreignReadState === 'reading'}
+              disabled={!snapshot.localRead || deviceBusy}
             >
               {snapshot.foreignReadState === 'reading' ? 'Reading…' : 'Read foreign slots'}
             </button>
             {snapshot.foreignRead ? (
-              <dl className="read-values">
-                <div>
-                  <dt>Slot 0 name</dt>
-                  <dd>{snapshot.foreignRead.slot0Name ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Slot 0 rate</dt>
-                  <dd>{formatRate(snapshot.foreignRead.slot0Rate)}</dd>
-                </div>
-                <div>
-                  <dt>Slot 1 name</dt>
-                  <dd>{snapshot.foreignRead.slot1Name ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Slot 1 rate</dt>
-                  <dd>{formatRate(snapshot.foreignRead.slot1Rate)}</dd>
-                </div>
-                <div>
-                  <dt>Slot 0 full name</dt>
-                  <dd>{snapshot.foreignRead.slot0FullName ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Slot 0 change after Z</dt>
-                  <dd>{yesNo(snapshot.foreignRead.slot0ChangeAfterZ)}</dd>
-                </div>
-                <div>
-                  <dt>Slot 1 full name</dt>
-                  <dd>{snapshot.foreignRead.slot1FullName ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Slot 1 change after Z</dt>
-                  <dd>{yesNo(snapshot.foreignRead.slot1ChangeAfterZ)}</dd>
-                </div>
-              </dl>
+              <>
+                <dl className="read-values">
+                  <div>
+                    <dt>Slot 0 name</dt>
+                    <dd>{snapshot.foreignRead.slot0Name ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 0 rate</dt>
+                    <dd>{formatRate(snapshot.foreignRead.slot0Rate)}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 1 name</dt>
+                    <dd>{snapshot.foreignRead.slot1Name ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 1 rate</dt>
+                    <dd>{formatRate(snapshot.foreignRead.slot1Rate)}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 0 full name</dt>
+                    <dd>{snapshot.foreignRead.slot0FullName ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 0 change after Z</dt>
+                    <dd>{formatFlag(snapshot.foreignRead.slot0ChangeAfterZ)}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 1 full name</dt>
+                    <dd>{snapshot.foreignRead.slot1FullName ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Slot 1 change after Z</dt>
+                    <dd>{formatFlag(snapshot.foreignRead.slot1ChangeAfterZ)}</dd>
+                  </div>
+                </dl>
+                {snapshot.foreignRead.rawFrames?.length ? (
+                  <details className="raw-frames">
+                    <summary>Raw frames</summary>
+                    <pre>{snapshot.foreignRead.rawFrames.join('\n')}</pre>
+                  </details>
+                ) : null}
+              </>
             ) : null}
           </div>
 
@@ -433,25 +449,33 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => void session.runReadConverter()}
-              disabled={!snapshot.foreignRead || snapshot.converterReadState === 'reading'}
+              disabled={!snapshot.foreignRead || deviceBusy}
             >
               {snapshot.converterReadState === 'reading' ? 'Reading…' : 'Read converter'}
             </button>
             {snapshot.converterRead ? (
-              <dl className="read-values">
-                <div>
-                  <dt>Name</dt>
-                  <dd>{snapshot.converterRead.name ?? '—'}</dd>
-                </div>
-                <div>
-                  <dt>Rate</dt>
-                  <dd>{formatRate(snapshot.converterRead.rate)}</dd>
-                </div>
-                <div>
-                  <dt>Print converter</dt>
-                  <dd>{yesNo(snapshot.converterRead.printFlag)}</dd>
-                </div>
-              </dl>
+              <>
+                <dl className="read-values">
+                  <div>
+                    <dt>Name</dt>
+                    <dd>{snapshot.converterRead.name ?? '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Rate</dt>
+                    <dd>{formatRate(snapshot.converterRead.rate)}</dd>
+                  </div>
+                  <div>
+                    <dt>Print converter</dt>
+                    <dd>{formatFlag(snapshot.converterRead.printFlag)}</dd>
+                  </div>
+                </dl>
+                {snapshot.converterRead.rawFrames?.length ? (
+                  <details className="raw-frames">
+                    <summary>Raw frames</summary>
+                    <pre>{snapshot.converterRead.rawFrames.join('\n')}</pre>
+                  </details>
+                ) : null}
+              </>
             ) : null}
           </div>
 
@@ -474,7 +498,8 @@ export function App({ session }: AppProps) {
               onClick={runWriteTest}
               disabled={
                 !snapshot.converterRead ||
-                snapshot.writeTestState === 'writing' ||
+                snapshot.readState !== 'read' ||
+                deviceBusy ||
                 !snapshot.foreignRead?.slot0FullName
               }
             >
@@ -483,6 +508,13 @@ export function App({ session }: AppProps) {
             {snapshot.foreignRead?.slot0FullName ? (
               <p className="muted test-value">
                 Current full name: <code>{snapshot.foreignRead.slot0FullName}</code>
+              </p>
+            ) : null}
+            {snapshot.writeTest && !snapshot.writeTest.restored ? (
+              <p className="plan-warnings" role="alert">
+                Restore did not verify. The cashier may still hold{` `}
+                <code>{snapshot.writeTest.temporary}</code>. Do not run the test again; stop and
+                report the log.
               </p>
             ) : null}
             {snapshot.writeTest ? (
@@ -531,7 +563,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={clearCapture}
-              disabled={busy || snapshot.capture.length === 0}
+              disabled={deviceBusy || snapshot.capture.length === 0}
             >
               Clear
             </button>
@@ -539,7 +571,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => void copy()}
-              disabled={busy || snapshot.capture.length === 0}
+              disabled={deviceBusy || snapshot.capture.length === 0}
             >
               {copyState === 'copied'
                 ? 'Copied'
@@ -551,7 +583,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => download('jsonl')}
-              disabled={busy || snapshot.capture.length === 0}
+              disabled={deviceBusy || snapshot.capture.length === 0}
             >
               Download JSONL
             </button>
@@ -559,7 +591,7 @@ export function App({ session }: AppProps) {
               type="button"
               className="button"
               onClick={() => download('text')}
-              disabled={busy || snapshot.capture.length === 0}
+              disabled={deviceBusy || snapshot.capture.length === 0}
             >
               Download text
             </button>

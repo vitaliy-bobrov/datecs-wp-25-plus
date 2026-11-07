@@ -463,10 +463,6 @@ h2 {
   margin: 0;
   font-size: 0.95rem;
 }
-.read-values .probe-raw {
-  overflow-wrap: anywhere;
-  font-size: 0.7rem;
-}
 
 .comparison-table {
   width: 100%;
@@ -474,12 +470,15 @@ h2 {
   font-size: 0.85rem;
 }
 .card.comparison .comparison-table th,
-.card.comparison .comparison-table td {
+.card.comparison .comparison-table td,
+.card.update-preview .comparison-table th,
+.card.update-preview .comparison-table td {
   text-align: left;
   padding: 8px 6px;
   border-bottom: 1px solid var(--line);
 }
-.card.comparison .comparison-table thead th {
+.card.comparison .comparison-table thead th,
+.card.update-preview .comparison-table thead th {
   color: var(--muted);
   font-size: 0.75rem;
   font-weight: 500;
@@ -510,4 +509,19 @@ h2 {
 }
 .write-test {
   border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+}
+
+.raw-frames {
+  margin-top: 10px;
+  font-size: 0.78rem;
+}
+.raw-frames summary {
+  cursor: pointer;
+  color: var(--muted);
+}
+.raw-frames pre {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  margin: 8px 0 0;
+  font-size: 0.7rem;
 }

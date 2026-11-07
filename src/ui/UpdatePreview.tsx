@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { CurrencyCode } from '../domain/rates';
-import { formatPercent, formatRateValue } from '../domain/rates';
+import { formatFlag, formatPercent, formatRateValue } from '../domain/rates';
 import {
   buildUpdatePlan,
   type ConverterSnapshot,
@@ -86,7 +86,13 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
               ) : null}
               <tr>
                 <th scope="row">Print converter</th>
-                <td>{converter?.printFlag === '1' ? 'Enabled' : 'Disabled'}</td>
+                <td>
+                  {converter?.printFlag === undefined
+                    ? '—'
+                    : converter.printFlag === '1'
+                      ? 'Enabled'
+                      : 'Disabled'}
+                </td>
                 <td>{printConverter ? 'Enabled' : 'Disabled'}</td>
               </tr>
             </tbody>
@@ -103,11 +109,11 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
             </div>
             <div>
               <dt>USD change after Z</dt>
-              <dd>{plan.usd.changeAfterZ === '1' ? 'Yes' : 'No'}</dd>
+              <dd>{formatFlag(plan.usd.changeAfterZ)}</dd>
             </div>
             <div>
               <dt>EUR change after Z</dt>
-              <dd>{plan.eur.changeAfterZ === '1' ? 'Yes' : 'No'}</dd>
+              <dd>{formatFlag(plan.eur.changeAfterZ)}</dd>
             </div>
           </dl>
 
@@ -129,7 +135,9 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
           ) : null}
 
           <p className="hint">
-            USD {formatPercent(plan.usd.percent)} · EUR {formatPercent(plan.eur.percent)} vs NBP.
+            {plan.usd.percent === null || plan.eur.percent === null
+              ? 'Difference unavailable for a missing current rate.'
+              : `USD ${formatPercent(plan.usd.percent)} · EUR ${formatPercent(plan.eur.percent)} vs NBP.`}{' '}
             This preview does not send or queue any write.
           </p>
         </>

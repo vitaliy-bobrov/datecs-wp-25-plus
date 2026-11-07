@@ -33,3 +33,9 @@ export function formatPercent(value: number): string {
   const sign = value > 0 ? '+' : '';
   return `${sign}${value.toFixed(2)}%`;
 }
+
+export function formatFlag(value: string | undefined): string {
+  if (value === '1') return 'Yes';
+  if (value === '0') return 'No';
+  return '—';
+}

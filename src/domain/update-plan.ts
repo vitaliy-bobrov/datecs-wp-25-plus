@@ -30,8 +30,8 @@ interface PlannedRate {
   current: number | null;
   targetRaw: number;
   target: number;
-  difference: number;
-  percent: number;
+  difference: number | null;
+  percent: number | null;
   fullName?: string;
   changeAfterZ?: string;
 }
@@ -73,8 +73,8 @@ function planRate(
     current: parseRawRate(currentRaw),
     targetRaw,
     target: targetRaw / 10000,
-    difference: comparison?.difference ?? 0,
-    percent: comparison?.percent ?? 0,
+    difference: comparison?.difference ?? null,
+    percent: comparison?.percent ?? null,
     fullName,
     changeAfterZ,
   };

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { toHex } from '../domain/capture-log';
 import { bccMatches, sumFromStxToEnq } from './preflight';
 import {
   CONVERTER_READ_FRAMES,
@@ -22,6 +23,17 @@ describe('local currency read protocol', () => {
       'pgmCurrencyDate',
     ]);
     expect(READ_LOCAL_FRAMES.every((frame) => !frame.bytes.includes(0xff))).toBe(true);
+  });
+
+  it('matches the captured local frame bytes exactly', () => {
+    expect(READ_LOCAL_FRAMES.map((frame) => toHex(frame.bytes))).toEqual([
+      '01303033302130303636333009333009053032383d03',
+      '013030333d2230303f3f4563724e756d626572426172636f6465090909053038323303',
+      '013030333a2330303f3f437572724e616d654c6f63616c0909090530363f3603',
+      '013030333a2430303f3f63757272656e63795f64617465090909053037353703',
+      '013030333d2530303f3f50676d437572724e616d654c6f63616c090909053038313f03',
+      '013030333d2630303f3f50676d43757272656e63795f64617465090909053038363003',
+    ]);
   });
 
   it('parses local name and date responses', () => {
@@ -56,7 +68,7 @@ describe('local currency read protocol', () => {
 });
 
 describe('foreign read probe', () => {
-  it('builds four Type2 read queries without 0xFF', () => {
+  it('builds the eight foreign Type2 read queries without 0xFF', () => {
     expect(FOREIGN_READ_FRAMES).toHaveLength(8);
     expect(FOREIGN_READ_FRAMES.map((frame) => frame.label)).toEqual([
       'slot0Name',
@@ -87,6 +99,15 @@ describe('foreign read probe', () => {
 });
 
 describe('converter read', () => {
+  it('matches the captured foreign and converter frame bytes', () => {
+    expect(toHex(FOREIGN_READ_FRAMES[0]?.bytes as Uint8Array)).toBe(
+      '013030333d2730303f3f437572724e616d65466f726569676e09300909053038303c03',
+    );
+    expect(toHex(CONVERTER_READ_FRAMES[0]?.bytes as Uint8Array)).toBe(
+      '013030333c2f30303f3f4e616d65436f6e76657274437572720909090530373f3a03',
+    );
+  });
+
   it('builds three fixed Type2 queries without 0xFF', () => {
     expect(CONVERTER_READ_FRAMES).toHaveLength(3);
     expect(CONVERTER_READ_FRAMES.map((frame) => frame.label)).toEqual([
@@ -118,6 +139,13 @@ describe('single-field full-name write test', () => {
     expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
     const readback = buildFullNameReadback();
     expect(readback.includes(0xff)).toBe(false);
+  });
+
+  it('matches the expected full-name write frame', async () => {
+    const { buildFullNameWrite } = await import('./read-currencies');
+    expect(toHex(buildFullNameWrite('dolar amerykański') as Uint8Array)).toBe(
+      '01303035323230303f3f4375727246756c6c4e616d65466f726569676e093009646f6c617220616d6572796b61f1736b69090531303f3503',
+    );
   });
 
   it('rejects unsupported characters', async () => {

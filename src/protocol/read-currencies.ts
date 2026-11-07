@@ -73,14 +73,15 @@ export interface ForeignReadFrame {
   bytes: Uint8Array;
 }
 
-function buildFrame(data: Uint8Array, delimiter: number): Uint8Array {
-  const prefix = [0x01, ...nibbles(data.length + 0x2a), delimiter, ...data, 0x05];
+function buildFrame(data: Uint8Array, delimiter: number, lengthBytes = data.length): Uint8Array {
+  const prefix = [0x01, ...nibbles(lengthBytes + 0x2a), delimiter, ...data, 0x05];
   const checksum = sumFromStxToEnq(Uint8Array.from(prefix), prefix.length - 1);
   return Uint8Array.from([...prefix, ...nibbles(checksum), 0x03]);
 }
 
 function buildReadQuery(parameter: string, delimiter: number): Uint8Array {
-  return buildFrame(new TextEncoder().encode(`00??${parameter}`), delimiter);
+  const data = new TextEncoder().encode(`00??${parameter}`);
+  return buildFrame(data, delimiter, data.length - 4);
 }
 
 const CP1250: Record<string, number> = {
@@ -127,7 +128,7 @@ export function buildFullNameWrite(value: string, delimiter = 0x32): Uint8Array 
     ...encoded,
     0x09,
   ]);
-  return buildFrame(data, delimiter);
+  return buildFrame(data, delimiter, data.length - 4);
 }
 
 export function buildFullNameReadback(delimiter = 0x33): Uint8Array {

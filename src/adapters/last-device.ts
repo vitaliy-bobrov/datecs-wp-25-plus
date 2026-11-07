@@ -3,8 +3,6 @@ const STORAGE_KEY = 'datecs-wp25:last-device:v1';
 export interface LastDevice {
   vendorId: number;
   productId: number;
-  label: string;
-  savedAt: number;
 }
 
 function storage(): Storage | null {
@@ -21,12 +19,7 @@ export function readLastDevice(): LastDevice | null {
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<LastDevice>;
     if (typeof value.vendorId !== 'number' || typeof value.productId !== 'number') return null;
-    return {
-      vendorId: value.vendorId,
-      productId: value.productId,
-      label: typeof value.label === 'string' ? value.label : 'Web Serial device',
-      savedAt: typeof value.savedAt === 'number' ? value.savedAt : 0,
-    };
+    return { vendorId: value.vendorId, productId: value.productId };
   } catch {
     return null;
   }
@@ -40,8 +33,6 @@ export function rememberPort(port: WebSerialPort): LastDevice | null {
     const device: LastDevice = {
       vendorId: info.usbVendorId,
       productId: info.usbProductId,
-      label: 'Web Serial device',
-      savedAt: Date.now(),
     };
     storage()?.setItem(STORAGE_KEY, JSON.stringify(device));
     return device;

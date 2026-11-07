@@ -10,6 +10,7 @@ import type {
 } from '../ports/transport';
 import { TransportError } from '../ports/transport';
 import { READ_LOCAL_FRAMES } from '../protocol/read-currencies';
+import { type2Response } from '../test/frames';
 import { DeviceSession } from './device-session';
 
 class FixedClock {
@@ -84,6 +85,46 @@ class RetrySelector implements TransportSelector {
     return this.calls === 1 ? new FailingOpenTransport() : new FakeTransport();
   });
   calls = 0;
+}
+
+const localResponses = [
+  '160130303335213030363630090480808280869a8080053036313903',
+  '1601303033372230303f3f300931090480808280869a8080053036363803',
+  '1601303033392330303f3f3009504c4e090480808280869a8080053037323403',
+  '1601303034372430303f3f300930382d30332d32342030393a30383a3035090480808280869a8080053039383f03',
+  '1601303033392530303f3f3009504c4e090480808280869a8080053037323603',
+  '1601303034372630303f3f300932362d31332d33362033303a33313a3539090480808280869a8080053039393403',
+].map((value) =>
+  Uint8Array.from((value.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16))),
+);
+
+function queueReadFlow(transport: FakeTransport): void {
+  transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+  const foreign = [
+    ['USD', "'"],
+    ['39251', '('],
+    ['EUR', ')'],
+    ['43955', '*'],
+    ['US Dollar', '+'],
+    ['1', ','],
+    ['Euro', '-'],
+    ['0', '.'],
+  ] as const;
+  for (const [value, delimiter] of foreign) transport.rx.push(type2Response(value, delimiter));
+  for (const [value, delimiter] of [
+    ['Konwerter', '/'],
+    ['39251', '0'],
+    ['1', '1'],
+  ] as const) {
+    transport.rx.push(type2Response(value, delimiter));
+  }
+}
+
+async function runReadFlow(session: DeviceSession): Promise<void> {
+  await session.runPreflight();
+  await session.runReadLocal();
+  await session.runReadForeign();
+  await session.runReadConverter();
 }
 
 describe('DeviceSession', () => {
@@ -329,36 +370,17 @@ describe('DeviceSession', () => {
     expect(session.getSnapshot().preflight?.mode).toBe('type2');
   });
 
-  it('replays the exact local read sequence after the preflight', async () => {
-    const lock = new FakeLock();
+  it('runs the local, foreign, converter and one-field write-test flow', async () => {
     const selector = new FakeSelector();
-    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
-
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
     await session.acquireLock();
     await session.connect();
     const transport = selector.last;
     if (!transport) throw new Error('Fake transport was not created.');
 
-    const hex = (value: string) =>
-      Uint8Array.from((value.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16)));
-    transport.rx.push(
-      SIMULATOR_PREFLIGHT_RESPONSE,
-      hex('160130303335213030363630090480808280869a8080053036313903'),
-      hex('1601303033372230303f3f300931090480808280869a8080053036363803'),
-      hex('1601303033392330303f3f3009504c4e090480808280869a8080053037323403'),
-      hex(
-        '1601303034372430303f3f300930382d30332d32342030393a30383a3035090480808280869a8080053039383f03',
-      ),
-      hex('1601303033392530303f3f3009504c4e090480808280869a8080053037323603'),
-      hex(
-        '1601303034372630303f3f300932362d31332d33362033303a33313a3539090480808280869a8080053039393403',
-      ),
-    );
+    queueReadFlow(transport);
+    await runReadFlow(session);
 
-    await session.runPreflight();
-    await session.runReadLocal();
-
-    expect(session.getSnapshot().readState).toBe('read');
     expect(session.getSnapshot().localRead).toMatchObject({
       barcode: '1',
       localName: 'PLN',
@@ -366,95 +388,153 @@ describe('DeviceSession', () => {
       pgmLocalName: 'PLN',
       pgmCurrencyDate: '26-13-36 30:31:59',
     });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length);
-    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
-
-    const status = Uint8Array.from([0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80]);
-    for (const value of ['USD', '392100', 'EUR', '439250', 'US Dollar', '1', 'Euro', '0']) {
-      const body = Uint8Array.from([
-        0x01,
-        ...new TextEncoder().encode(`0039'00??0\t${value}\t`),
-        0x04,
-        ...status,
-        0x05,
-      ]);
-      const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
-      const bcc = Array.from(
-        { length: 4 },
-        (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f),
-      );
-      transport.rx.push(Uint8Array.from([...body, ...bcc, 0x03]));
-    }
-
-    await session.runReadForeign();
-    expect(session.getSnapshot().foreignReadState).toBe('read');
     expect(session.getSnapshot().foreignRead).toMatchObject({
       slot0Name: 'USD',
-      slot0Rate: '392100',
+      slot0Rate: '39251',
       slot1Name: 'EUR',
-      slot1Rate: '439250',
+      slot1Rate: '43955',
       slot0FullName: 'US Dollar',
       slot0ChangeAfterZ: '1',
       slot1FullName: 'Euro',
       slot1ChangeAfterZ: '0',
     });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8);
-    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
-
-    for (const value of ['Konwerter', '39251', '1']) {
-      const body = Uint8Array.from([
-        0x01,
-        ...new TextEncoder().encode(`0039'00??0\t${value}\t`),
-        0x04,
-        ...status,
-        0x05,
-      ]);
-      const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
-      const bcc = Array.from(
-        { length: 4 },
-        (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f),
-      );
-      transport.rx.push(Uint8Array.from([...body, ...bcc, 0x03]));
-    }
-
-    await session.runReadConverter();
-    expect(session.getSnapshot().converterReadState).toBe('read');
     expect(session.getSnapshot().converterRead).toMatchObject({
       name: 'Konwerter',
       rate: '39251',
       printFlag: '1',
     });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 11);
-    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
 
-    const response = (value: string) => {
-      const body = Uint8Array.from([
-        0x01,
-        ...new TextEncoder().encode(`0039'00??0\t${value}`),
-        0x04,
-        ...status,
-        0x05,
-      ]);
-      const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
-      const bcc = Array.from(
-        { length: 4 },
-        (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f),
-      );
-      return Uint8Array.from([...body, ...bcc, 0x03]);
-    };
-
-    transport.rx.push(response(''), response('US Dollar T'), response(''), response('US Dollar'));
+    transport.rx.push(
+      type2Response('US Dollar', '2'),
+      type2Response('', '3'),
+      type2Response('XS Dollar', '4'),
+      type2Response('', '5'),
+      type2Response('US Dollar', '6'),
+    );
     await session.runFullNameWriteTest();
     expect(session.getSnapshot().writeTestState).toBe('verified');
     expect(session.getSnapshot().writeTest).toMatchObject({
       original: 'US Dollar',
-      temporary: 'US Dollar T',
-      temporaryReadback: 'US Dollar T',
+      temporary: 'XS Dollar',
+      temporaryReadback: 'XS Dollar',
       restoredReadback: 'US Dollar',
       restored: true,
     });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 15);
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 5);
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
+  });
+
+  it('fails the local read visibly when no response arrives', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE);
+
+    await session.runPreflight();
+    await session.runReadLocal();
+
+    expect(session.getSnapshot().readState).toBe('failed');
+    expect(
+      session
+        .getSnapshot()
+        .capture.some((entry) => entry.kind === 'error' && entry.code === 'timeout'),
+    ).toBe(true);
+  });
+
+  it('restores the original full name after a temporary readback mismatch', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('US Dollar', '2'),
+      type2Response('', '3'),
+      type2Response('XS Dollar!', '4'),
+      type2Response('', '5'),
+      type2Response('US Dollar', '6'),
+    );
+    await session.runFullNameWriteTest();
+
+    expect(session.getSnapshot().writeTestState).toBe('failed');
+    expect(session.getSnapshot().writeTest).toMatchObject({
+      original: 'US Dollar',
+      temporary: 'XS Dollar',
+      temporaryReadback: 'XS Dollar!',
+      restoredReadback: 'US Dollar',
+      restored: true,
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 5);
+    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
+  });
+
+  it('rejects a response whose delimiter does not match the request', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, type2Response('', '"'));
+
+    await session.runPreflight();
+    await session.runReadLocal();
+
+    expect(session.getSnapshot().readState).toBe('failed');
+    expect(
+      session
+        .getSnapshot()
+        .capture.some((entry) => entry.kind === 'error' && entry.code === 'protocol-error'),
+    ).toBe(true);
+  });
+
+  it('reports an unrecovered full-name write when restore gets no response', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('US Dollar', '2'),
+      type2Response('', '3'),
+      type2Response('XS Dollar!', '4'),
+    );
+    await session.runFullNameWriteTest();
+
+    expect(session.getSnapshot().writeTestState).toBe('failed');
+    expect(session.getSnapshot().writeTest?.restored).toBe(false);
+  });
+
+  it('clears foreign, converter and write-test state before a new preflight', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE);
+    await session.runPreflight();
+
+    expect(session.getSnapshot().readState).toBe('idle');
+    expect(session.getSnapshot().foreignReadState).toBe('idle');
+    expect(session.getSnapshot().converterReadState).toBe('idle');
+    expect(session.getSnapshot().writeTestState).toBe('idle');
+    expect(session.getSnapshot().foreignRead).toBeUndefined();
+    expect(session.getSnapshot().converterRead).toBeUndefined();
   });
 
   it('reports an unavailable lock', async () => {
