@@ -57,15 +57,13 @@ Use the real Wine prefix that contains the ECR Tool; adjust the path.
 
 ### ECR Tool cannot connect / log stays empty
 
-The proxy log is empty because ECR Tool is not reaching the PTY. Test Wine's COM1 mapping separately:
+The proxy log is empty because ECR Tool is not reaching the PTY. Do **not** send arbitrary bytes to COM1 while the cashier is connected; every byte is forwarded to the device. Diagnose by inspecting the symlink and launching ECR Tool:
 
 ```bash
-WINEPREFIX="/Users/bobrov1989/.wine-ecrtool" wine cmd /c "echo test > COM1"
+ls -l "$WINEPREFIX/dosdevices/com1"
 ```
 
-While the proxy is running, this should print `ECR -> cashier: ...` and add an `ecr-to-cashier` entry to the JSONL.
-
-If it does not:
+If ECR Tool still cannot connect:
 
 1. Confirm the symlink while the proxy runs:
    `ls -l "$WINEPREFIX/dosdevices/com1"`
