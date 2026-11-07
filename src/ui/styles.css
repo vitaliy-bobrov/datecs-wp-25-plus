@@ -453,3 +453,17 @@ h2 {
     grid-template-columns: 1fr;
   }
 }
+
+.foreign-probe {
+  margin-top: 18px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.foreign-probe h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+.read-values .probe-raw {
+  overflow-wrap: anywhere;
+  font-size: 0.7rem;
+}

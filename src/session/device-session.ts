@@ -12,7 +12,11 @@ import {
   toTransportError,
 } from '../ports/transport';
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
-import { parseReadResponse, READ_LOCAL_FRAMES } from '../protocol/read-currencies';
+import {
+  buildForeignNameProbe,
+  parseReadResponse,
+  READ_LOCAL_FRAMES,
+} from '../protocol/read-currencies';
 
 type SessionPhase = 'idle' | 'connecting' | 'connected' | 'error';
 type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable';
@@ -47,6 +51,13 @@ interface LocalReadResult {
   rawFrames?: string[];
 }
 
+type ForeignProbeState = 'idle' | 'probing' | 'probed' | 'failed';
+
+interface ForeignProbeResult {
+  fields: string[];
+  rawHex: string;
+}
+
 export interface SessionSnapshot {
   phase: SessionPhase;
   lockState: LockState;
@@ -55,8 +66,10 @@ export interface SessionSnapshot {
   error?: SessionError;
   captureState: CaptureState;
   readState: ReadState;
+  foreignProbeState: ForeignProbeState;
   preflight?: PreflightResult;
   localRead?: LocalReadResult;
+  foreignProbe?: ForeignProbeResult;
   capture: readonly CaptureEntry[];
 }
 
@@ -95,6 +108,7 @@ export class DeviceSession {
     lockState: 'idle',
     captureState: 'idle',
     readState: 'idle',
+    foreignProbeState: 'idle',
     capture: [],
   };
 
@@ -153,8 +167,10 @@ export class DeviceSession {
       transportKind: kind,
       captureState: 'idle',
       readState: 'idle',
+      foreignProbeState: 'idle',
       preflight: undefined,
       localRead: undefined,
+      foreignProbe: undefined,
       error: undefined,
     });
     this.append({
@@ -221,8 +237,10 @@ export class DeviceSession {
       error: undefined,
       captureState: 'idle',
       readState: 'idle',
+      foreignProbeState: 'idle',
       preflight: undefined,
       localRead: undefined,
+      foreignProbe: undefined,
     });
   }
 
@@ -543,6 +561,7 @@ export class DeviceSession {
     transport: DeviceTransport,
     transportKind: TransportKind,
     generation: number,
+    message = 'Read local rx',
   ): Promise<Uint8Array> {
     let raw: Uint8Array = new Uint8Array();
     const deadline = Date.now() + 500;
@@ -566,7 +585,7 @@ export class DeviceSession {
         direction: 'rx',
         transport: transportKind,
         bytes: chunk,
-        message: 'Read local rx',
+        message,
       });
       if (parseReadResponse(raw)) return raw;
       if (raw.length > 512) break;
@@ -592,6 +611,102 @@ export class DeviceSession {
     this.set({ readState: 'failed' });
   }
 
+  async runForeignProbe(): Promise<void> {
+    const transport = this.transport;
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.transportKind !== 'webserial' ||
+      this.snapshot.readState !== 'read' ||
+      this.snapshot.foreignProbeState === 'probing'
+    ) {
+      return;
+    }
+
+    const generation = this.preflightGeneration;
+    const transportKind = this.snapshot.transportKind;
+    const environment = environmentDetail();
+    const frame = buildForeignNameProbe();
+    this.set({ foreignProbeState: 'probing', foreignProbe: undefined });
+
+    try {
+      await transport.write(frame);
+    } catch (error) {
+      const transportError = toTransportError(error, 'foreign-probe.write');
+      this.append({
+        kind: 'error',
+        code: transportError.code,
+        message: PUBLIC_ERROR[transportError.code],
+        stage: transportError.detail?.stage,
+        detail: { ...environment, ...transportError.detail } as Record<string, unknown>,
+      });
+      this.set({ foreignProbeState: 'failed' });
+      return;
+    }
+
+    this.append({
+      kind: 'tx',
+      direction: 'tx',
+      transport: transportKind,
+      bytes: frame,
+      message: 'Foreign name read probe tx',
+    });
+
+    let raw: Uint8Array;
+    try {
+      raw = await this.readLocalResponse(transport, transportKind, generation, 'Foreign probe rx');
+    } catch (error) {
+      if (!this.isCurrentPreflight(transport, generation)) return;
+      const transportError = toTransportError(error, 'foreign-probe.read');
+      this.append({
+        kind: 'error',
+        code: transportError.code,
+        message: PUBLIC_ERROR[transportError.code],
+        stage: transportError.detail?.stage,
+        detail: { ...environment, ...transportError.detail } as Record<string, unknown>,
+      });
+      this.set({ foreignProbeState: 'failed' });
+      return;
+    }
+
+    if (!this.isCurrentPreflight(transport, generation)) return;
+    if (raw.length === 0) {
+      this.append({
+        kind: 'error',
+        code: 'timeout',
+        message: 'No foreign-name probe response within 500 ms.',
+        stage: 'timeout',
+        detail: { operation: 'foreign-probe.read', stage: 'timeout' },
+      });
+      this.set({ foreignProbeState: 'failed' });
+      return;
+    }
+
+    const parsed = parseReadResponse(raw);
+    if (!parsed) {
+      this.append({
+        kind: 'error',
+        code: 'device-unavailable',
+        message: 'The foreign-name probe response was not a valid Type2 frame.',
+        stage: 'parse',
+        errorMessage: toHex(raw),
+      });
+      this.set({ foreignProbeState: 'failed' });
+      return;
+    }
+
+    this.append({
+      kind: 'info',
+      transport: transportKind,
+      message: 'Foreign name probe response',
+      detail: { fields: parsed.fields, rawHex: parsed.rawHex, ...environment },
+    });
+    this.set({
+      foreignProbeState: 'probed',
+      foreignProbe: { fields: parsed.fields, rawHex: parsed.rawHex },
+    });
+  }
+
   clearCapture(): void {
     this.capture.clear();
     this.snapshot = {
@@ -599,8 +714,10 @@ export class DeviceSession {
       capture: this.capture.snapshot(),
       captureState: 'idle',
       readState: 'idle',
+      foreignProbeState: 'idle',
       preflight: undefined,
       localRead: undefined,
+      foreignProbe: undefined,
     };
     this.emit();
   }

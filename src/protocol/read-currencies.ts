@@ -1,5 +1,5 @@
 import { toHex } from '../domain/capture-log';
-import { bccMatches, sumFromStxToEnq } from './preflight';
+import { bccMatches, sumFromStxToEnq, toAsciiNibble } from './preflight';
 
 type ReadFrameLabel =
   | 'init'
@@ -48,6 +48,27 @@ export const READ_LOCAL_FRAMES: ReadFrame[] = [
     bytes: fromHex('013030333d2630303f3f50676d43757272656e63795f64617465090909053038363003'),
   },
 ];
+
+function nibbles(value: number): number[] {
+  return Array.from({ length: 4 }, (_, index) => {
+    const shift = (3 - index) * 4;
+    return toAsciiNibble((value >> shift) & 0x0f);
+  });
+}
+
+export function buildForeignNameProbe(): Uint8Array {
+  const data = new TextEncoder().encode('CurrNameForeign\t0\t\t');
+  const prefix = [
+    0x01,
+    ...nibbles(data.length + 0x2a),
+    0x27,
+    ...new TextEncoder().encode('00??'),
+    ...data,
+    0x05,
+  ];
+  const checksum = sumFromStxToEnq(Uint8Array.from(prefix), prefix.length - 1);
+  return Uint8Array.from([...prefix, ...nibbles(checksum), 0x03]);
+}
 
 export function parseReadResponse(input: Uint8Array): ReadResponse | null {
   let offset = 0;

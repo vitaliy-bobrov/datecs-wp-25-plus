@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseReadResponse, READ_LOCAL_FRAMES } from './read-currencies';
+import { bccMatches, sumFromStxToEnq } from './preflight';
+import { buildForeignNameProbe, parseReadResponse, READ_LOCAL_FRAMES } from './read-currencies';
 
 const response = (hex: string) =>
   Uint8Array.from((hex.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16)));
@@ -37,5 +38,18 @@ describe('local currency read protocol', () => {
     const raw = response('01303033392330303f3f3009504c4e090480808280869a8080053037323403');
     raw[raw.length - 2] = 0x30;
     expect(parseReadResponse(raw)).toBeNull();
+  });
+});
+
+describe('foreign read probe', () => {
+  it('builds one Type2 read query without 0xFF', () => {
+    const frame = buildForeignNameProbe();
+    expect(frame[0]).toBe(0x01);
+    expect(frame[frame.length - 1]).toBe(0x03);
+    expect(frame.includes(0xff)).toBe(false);
+    expect(new TextDecoder().decode(frame)).toContain('CurrNameForeign');
+    expect(frame).toHaveLength(35);
+    const enq = frame.length - 6;
+    expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
   });
 });

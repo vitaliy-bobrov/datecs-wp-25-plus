@@ -271,8 +271,8 @@ export function App({ session }: AppProps) {
             <div>
               <h3>Local currency read</h3>
               <p className="muted">
-                Replays the exact ECR Tool read sequence. Local PLN only; foreign slots are not
-                readable yet.
+                Replays the exact ECR Tool read sequence. Local PLN only; the probe below tests
+                whether the foreign name is readable.
               </p>
             </div>
             <span className={`state state-${stateClass(snapshot.readState)}`}>
@@ -316,6 +316,41 @@ export function App({ session }: AppProps) {
               </div>
             </dl>
           ) : null}
+
+          <div className="foreign-probe">
+            <div className="card-heading">
+              <div>
+                <h4>Foreign name probe</h4>
+                <p className="muted">
+                  One read-only query for <code>CurrNameForeign</code> slot 0. No <code>0xFF</code>,
+                  no write. If it returns an error, the foreign record is write-only.
+                </p>
+              </div>
+              <span className={`state state-${stateClass(snapshot.foreignProbeState)}`}>
+                {stateLabel(snapshot.foreignProbeState)}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="button"
+              onClick={() => void session.runForeignProbe()}
+              disabled={!snapshot.localRead || snapshot.foreignProbeState === 'probing'}
+            >
+              {snapshot.foreignProbeState === 'probing' ? 'Probing…' : 'Probe foreign name'}
+            </button>
+            {snapshot.foreignProbe ? (
+              <dl className="read-values">
+                <div>
+                  <dt>Response fields</dt>
+                  <dd>{snapshot.foreignProbe.fields.join(' · ') || 'empty'}</dd>
+                </div>
+                <div>
+                  <dt>Raw response</dt>
+                  <dd className="probe-raw">{snapshot.foreignProbe.rawHex}</dd>
+                </div>
+              </dl>
+            ) : null}
+          </div>
         </div>
       </section>
 

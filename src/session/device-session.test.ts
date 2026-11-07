@@ -342,6 +342,24 @@ describe('DeviceSession', () => {
     });
     expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length);
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
+
+    const status = Uint8Array.from([0x80, 0x80, 0x82, 0x80, 0x86, 0x9a, 0x80, 0x80]);
+    const body = Uint8Array.from([
+      0x01,
+      ...new TextEncoder().encode("0039'00??0\tEUR\t"),
+      0x04,
+      ...status,
+      0x05,
+    ]);
+    const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
+    const bcc = Array.from({ length: 4 }, (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f));
+    transport.rx.push(Uint8Array.from([...body, ...bcc, 0x03]));
+
+    await session.runForeignProbe();
+    expect(session.getSnapshot().foreignProbeState).toBe('probed');
+    expect(session.getSnapshot().foreignProbe?.fields).toEqual(['EUR']);
+    expect(transport.written).toHaveLength(2 + READ_LOCAL_FRAMES.length);
+    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 
   it('reports an unavailable lock', async () => {
