@@ -39,7 +39,7 @@ Hardware:
 1. Choose **Connect Web Serial** and select the cashier; the preflight runs automatically.
 2. Use **Run preflight** only if it needs a retry.
 3. Download the JSONL and/or text log.
-4. Confirm the preflight tx/rx; then use Read local currencies and the experimental foreign read. No rate write is sent; the one-field full-name test is separate and requires explicit confirmation.
+4. Confirm the preflight tx/rx; then use Read foreign slots. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No rate write is sent; the one-field full-name test is separate and requires explicit confirmation.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -79,7 +79,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 ## Current scope
 
-Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, reads the confirmed local PLN values, reads the two foreign slots (name, full name, four-decimal rate and Change-after-Z flag) and compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only write is an explicit slot-0 full-name test with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
+Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, reads the two foreign slots (name, full name, four-decimal rate and Change-after-Z flag) and compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only write is an explicit slot-0 full-name test with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
 An update preview shows the exact four-decimal targets from NBP against the read records. The only device write is the explicitly confirmed slot-0 full-name marker/restore test; rate, multi-field and converter writes are not implemented.
 

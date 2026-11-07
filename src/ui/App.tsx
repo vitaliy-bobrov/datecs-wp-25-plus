@@ -164,7 +164,7 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Currency reader</h1>
           <p className="lede">
-            Web Serial connection with preflight, local and foreign reads, NBP comparison and a
+            Web Serial connection with automatic preflight, foreign-slot reads, NBP comparison and a
             one-field full-name write test. No <code>0xFF</code>; no rate or multi-field write.
           </p>
         </div>
@@ -313,241 +313,180 @@ export function App({ session }: AppProps) {
         ) : (
           <p className="empty">No preflight yet. Connect first, then run it.</p>
         )}
-
-        <div className="read-local">
+        <div className="foreign-probe">
           <div className="card-heading">
             <div>
-              <h3>Local currency read</h3>
+              <h4>Foreign slots</h4>
               <p className="muted">
-                Replays the exact ECR Tool read sequence. Local PLN is confirmed; the foreign read
-                below is experimental.
+                Reads names, full names, raw rates and Change after Z flags for slots 0 and 1. No
+                <code>0xFF</code>, no write. Experimental until confirmed on hardware.
               </p>
             </div>
-            <span className={`state state-${stateClass(snapshot.readState)}`}>
-              {stateLabel(snapshot.readState)}
+            <span className={`state state-${stateClass(snapshot.foreignReadState)}`}>
+              {stateLabel(snapshot.foreignReadState)}
             </span>
           </div>
           <button
             type="button"
-            className="button primary"
-            onClick={() => void session.runReadLocal()}
-            disabled={
-              snapshot.transportKind !== 'webserial' ||
-              snapshot.captureState !== 'captured' ||
-              snapshot.readState === 'reading'
-            }
+            className="button"
+            onClick={() => void session.runReadForeign()}
+            disabled={snapshot.captureState !== 'captured' || deviceBusy}
           >
-            {snapshot.readState === 'reading' ? 'Reading…' : 'Read local currencies'}
+            {snapshot.foreignReadState === 'reading' ? 'Reading…' : 'Read foreign slots'}
           </button>
-
-          {snapshot.localRead ? (
+          {snapshot.foreignRead ? (
             <>
               <dl className="read-values">
                 <div>
-                  <dt>Barcode</dt>
-                  <dd>{snapshot.localRead.barcode ?? '—'}</dd>
+                  <dt>Slot 0 name</dt>
+                  <dd>{snapshot.foreignRead.slot0Name ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Local name</dt>
-                  <dd>{snapshot.localRead.localName ?? '—'}</dd>
+                  <dt>Slot 0 rate</dt>
+                  <dd>{formatRate(snapshot.foreignRead.slot0Rate)}</dd>
                 </div>
                 <div>
-                  <dt>Currency date</dt>
-                  <dd>{snapshot.localRead.currencyDate ?? '—'}</dd>
+                  <dt>Slot 1 name</dt>
+                  <dd>{snapshot.foreignRead.slot1Name ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Programmed local</dt>
-                  <dd>{snapshot.localRead.pgmLocalName ?? '—'}</dd>
+                  <dt>Slot 1 rate</dt>
+                  <dd>{formatRate(snapshot.foreignRead.slot1Rate)}</dd>
                 </div>
                 <div>
-                  <dt>Programmed date</dt>
-                  <dd>{snapshot.localRead.pgmCurrencyDate ?? '—'}</dd>
+                  <dt>Slot 0 full name</dt>
+                  <dd>{snapshot.foreignRead.slot0FullName ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 0 change after Z</dt>
+                  <dd>{formatFlag(snapshot.foreignRead.slot0ChangeAfterZ)}</dd>
+                </div>
+                <div>
+                  <dt>Slot 1 full name</dt>
+                  <dd>{snapshot.foreignRead.slot1FullName ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Slot 1 change after Z</dt>
+                  <dd>{formatFlag(snapshot.foreignRead.slot1ChangeAfterZ)}</dd>
                 </div>
               </dl>
-              {snapshot.localRead.rawFrames?.length ? (
+              {snapshot.foreignRead.rawFrames?.length ? (
                 <details className="raw-frames">
                   <summary>Raw frames</summary>
-                  <pre>{snapshot.localRead.rawFrames.join('\n')}</pre>
+                  <pre>{snapshot.foreignRead.rawFrames.join('\n')}</pre>
                 </details>
               ) : null}
             </>
           ) : null}
+        </div>
 
-          <div className="foreign-probe">
-            <div className="card-heading">
-              <div>
-                <h4>Foreign slots</h4>
-                <p className="muted">
-                  Reads names, full names, raw rates and Change after Z flags for slots 0 and 1. No
-                  <code>0xFF</code>, no write. Experimental until confirmed on hardware.
-                </p>
-              </div>
-              <span className={`state state-${stateClass(snapshot.foreignReadState)}`}>
-                {stateLabel(snapshot.foreignReadState)}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="button"
-              onClick={() => void session.runReadForeign()}
-              disabled={!snapshot.localRead || deviceBusy}
-            >
-              {snapshot.foreignReadState === 'reading' ? 'Reading…' : 'Read foreign slots'}
-            </button>
-            {snapshot.foreignRead ? (
-              <>
-                <dl className="read-values">
-                  <div>
-                    <dt>Slot 0 name</dt>
-                    <dd>{snapshot.foreignRead.slot0Name ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 0 rate</dt>
-                    <dd>{formatRate(snapshot.foreignRead.slot0Rate)}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 1 name</dt>
-                    <dd>{snapshot.foreignRead.slot1Name ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 1 rate</dt>
-                    <dd>{formatRate(snapshot.foreignRead.slot1Rate)}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 0 full name</dt>
-                    <dd>{snapshot.foreignRead.slot0FullName ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 0 change after Z</dt>
-                    <dd>{formatFlag(snapshot.foreignRead.slot0ChangeAfterZ)}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 1 full name</dt>
-                    <dd>{snapshot.foreignRead.slot1FullName ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Slot 1 change after Z</dt>
-                    <dd>{formatFlag(snapshot.foreignRead.slot1ChangeAfterZ)}</dd>
-                  </div>
-                </dl>
-                {snapshot.foreignRead.rawFrames?.length ? (
-                  <details className="raw-frames">
-                    <summary>Raw frames</summary>
-                    <pre>{snapshot.foreignRead.rawFrames.join('\n')}</pre>
-                  </details>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-
-          <div className="foreign-probe">
-            <div className="card-heading">
-              <div>
-                <h4>Converter record</h4>
-                <p className="muted">
-                  Reads converter name, four-decimal rate and Print-converter flag. No{' '}
-                  <code>0xFF</code>, no write. Experimental until confirmed on hardware.
-                </p>
-              </div>
-              <span className={`state state-${stateClass(snapshot.converterReadState)}`}>
-                {stateLabel(snapshot.converterReadState)}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="button"
-              onClick={() => void session.runReadConverter()}
-              disabled={!snapshot.foreignRead || deviceBusy}
-            >
-              {snapshot.converterReadState === 'reading' ? 'Reading…' : 'Read converter'}
-            </button>
-            {snapshot.converterRead ? (
-              <>
-                <dl className="read-values">
-                  <div>
-                    <dt>Name</dt>
-                    <dd>{snapshot.converterRead.name ?? '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Rate</dt>
-                    <dd>{formatRate(snapshot.converterRead.rate)}</dd>
-                  </div>
-                  <div>
-                    <dt>Print converter</dt>
-                    <dd>{formatFlag(snapshot.converterRead.printFlag)}</dd>
-                  </div>
-                </dl>
-                {snapshot.converterRead.rawFrames?.length ? (
-                  <details className="raw-frames">
-                    <summary>Raw frames</summary>
-                    <pre>{snapshot.converterRead.rawFrames.join('\n')}</pre>
-                  </details>
-                ) : null}
-              </>
-            ) : null}
-          </div>
-
-          <div className="foreign-probe write-test">
-            <div className="card-heading">
-              <div>
-                <h4>One-field write test</h4>
-                <p className="muted">
-                  Writes only slot 0 full name: temporary marker, readback, restore, readback. One
-                  field, two writes, no rates or flags. Production-first experiment.
-                </p>
-              </div>
-              <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
-                {stateLabel(snapshot.writeTestState)}
-              </span>
-            </div>
-            <button
-              type="button"
-              className="button"
-              onClick={runWriteTest}
-              disabled={
-                !snapshot.converterRead ||
-                snapshot.readState !== 'read' ||
-                deviceBusy ||
-                !snapshot.foreignRead?.slot0FullName
-              }
-            >
-              {snapshot.writeTestState === 'writing' ? 'Writing…' : 'Run one-field write test'}
-            </button>
-            {snapshot.foreignRead?.slot0FullName ? (
-              <p className="muted test-value">
-                Current full name: <code>{snapshot.foreignRead.slot0FullName}</code>
+        <div className="foreign-probe">
+          <div className="card-heading">
+            <div>
+              <h4>Converter record</h4>
+              <p className="muted">
+                Reads converter name, four-decimal rate and Print-converter flag. No{' '}
+                <code>0xFF</code>, no write. Experimental until confirmed on hardware.
               </p>
-            ) : null}
-            {snapshot.writeTest && !snapshot.writeTest.restored ? (
-              <p className="plan-warnings" role="alert">
-                Restore did not verify. The cashier may still hold{` `}
-                <code>{snapshot.writeTest.temporary}</code>. Do not run the test again; stop and
-                report the log.
-              </p>
-            ) : null}
-            {snapshot.writeTest ? (
+            </div>
+            <span className={`state state-${stateClass(snapshot.converterReadState)}`}>
+              {stateLabel(snapshot.converterReadState)}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="button"
+            onClick={() => void session.runReadConverter()}
+            disabled={!snapshot.foreignRead || deviceBusy}
+          >
+            {snapshot.converterReadState === 'reading' ? 'Reading…' : 'Read converter'}
+          </button>
+          {snapshot.converterRead ? (
+            <>
               <dl className="read-values">
                 <div>
-                  <dt>Temporary readback</dt>
-                  <dd>{snapshot.writeTest.temporaryReadback ?? '—'}</dd>
+                  <dt>Name</dt>
+                  <dd>{snapshot.converterRead.name ?? '—'}</dd>
                 </div>
                 <div>
-                  <dt>Restored readback</dt>
-                  <dd>{snapshot.writeTest.restoredReadback ?? '—'}</dd>
+                  <dt>Rate</dt>
+                  <dd>{formatRate(snapshot.converterRead.rate)}</dd>
                 </div>
                 <div>
-                  <dt>Restored</dt>
-                  <dd>{snapshot.writeTest.restored ? 'Yes' : 'No'}</dd>
+                  <dt>Print converter</dt>
+                  <dd>{formatFlag(snapshot.converterRead.printFlag)}</dd>
                 </div>
-                {snapshot.writeTest.message ? (
-                  <div>
-                    <dt>Result</dt>
-                    <dd>{snapshot.writeTest.message}</dd>
-                  </div>
-                ) : null}
               </dl>
-            ) : null}
+              {snapshot.converterRead.rawFrames?.length ? (
+                <details className="raw-frames">
+                  <summary>Raw frames</summary>
+                  <pre>{snapshot.converterRead.rawFrames.join('\n')}</pre>
+                </details>
+              ) : null}
+            </>
+          ) : null}
+        </div>
+
+        <div className="foreign-probe write-test">
+          <div className="card-heading">
+            <div>
+              <h4>One-field write test</h4>
+              <p className="muted">
+                Writes only slot 0 full name: temporary marker, readback, restore, readback. One
+                field, two writes, no rates or flags. Production-first experiment.
+              </p>
+            </div>
+            <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
+              {stateLabel(snapshot.writeTestState)}
+            </span>
           </div>
+          <button
+            type="button"
+            className="button"
+            onClick={runWriteTest}
+            disabled={
+              !snapshot.converterRead ||
+              snapshot.readState !== 'read' ||
+              deviceBusy ||
+              !snapshot.foreignRead?.slot0FullName
+            }
+          >
+            {snapshot.writeTestState === 'writing' ? 'Writing…' : 'Run one-field write test'}
+          </button>
+          {snapshot.foreignRead?.slot0FullName ? (
+            <p className="muted test-value">
+              Current full name: <code>{snapshot.foreignRead.slot0FullName}</code>
+            </p>
+          ) : null}
+          {snapshot.writeTest && !snapshot.writeTest.restored ? (
+            <p className="plan-warnings" role="alert">
+              Restore did not verify. The cashier may still hold{` `}
+              <code>{snapshot.writeTest.temporary}</code>. Do not run the test again; stop and
+              report the log.
+            </p>
+          ) : null}
+          {snapshot.writeTest ? (
+            <dl className="read-values">
+              <div>
+                <dt>Temporary readback</dt>
+                <dd>{snapshot.writeTest.temporaryReadback ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Restored readback</dt>
+                <dd>{snapshot.writeTest.restoredReadback ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Restored</dt>
+                <dd>{snapshot.writeTest.restored ? 'Yes' : 'No'}</dd>
+              </div>
+              {snapshot.writeTest.message ? (
+                <div>
+                  <dt>Result</dt>
+                  <dd>{snapshot.writeTest.message}</dd>
+                </div>
+              ) : null}
+            </dl>
+          ) : null}
         </div>
       </section>
 

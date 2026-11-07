@@ -324,6 +324,10 @@ export class DeviceSession {
     });
   }
 
+  private readIsReady(): boolean {
+    return this.snapshot.readState === 'read';
+  }
+
   private isDeviceBusy(): boolean {
     const snapshot = this.snapshot;
     return (
@@ -611,12 +615,15 @@ export class DeviceSession {
       this.snapshot.phase !== 'connected' ||
       !transport ||
       this.snapshot.transportKind !== 'webserial' ||
-      this.snapshot.readState !== 'read' ||
-      this.snapshot.foreignReadState === 'reading' ||
-      this.snapshot.converterReadState === 'reading' ||
-      this.snapshot.writeTestState === 'writing'
+      this.snapshot.captureState !== 'captured' ||
+      this.isDeviceBusy()
     ) {
       return;
+    }
+
+    if (!this.readIsReady()) {
+      await this.runReadLocal();
+      if (this.snapshot.phase !== 'connected' || !this.readIsReady()) return;
     }
 
     const generation = this.preflightGeneration;

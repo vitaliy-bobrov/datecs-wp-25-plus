@@ -424,6 +424,24 @@ describe('DeviceSession', () => {
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 
+  it('runs the local bootstrap automatically when foreign read is first', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+
+    await session.runPreflight();
+    await session.runReadForeign();
+
+    expect(session.getSnapshot().readState).toBe('read');
+    expect(session.getSnapshot().foreignReadState).toBe('read');
+    expect(session.getSnapshot().foreignRead?.slot0Name).toBe('USD');
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8);
+  });
+
   it('fails the local read visibly when no response arrives', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
