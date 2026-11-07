@@ -35,7 +35,9 @@ def main() -> int:
     parser.add_argument("--baud", type=int, default=9600)
     parser.add_argument("--log", default="ecr-read-capture.jsonl")
     parser.add_argument("--wine-prefix", default=str(Path.home() / ".wine"),
-                        help="Wine prefix whose dosdevices/com1 should point at the PTY")
+                        help="Wine prefix whose dosdevices/<com-port> should point at the PTY")
+    parser.add_argument("--com-port", default="com1", choices=[f"com{i}" for i in range(1, 10)],
+                        help="Wine COM port to create; use com3 when Wineskin resets com1")
     args = parser.parse_args()
 
     try:
@@ -55,11 +57,11 @@ def main() -> int:
     tty.setraw(slave)
     pty_name = os.ttyname(slave)
 
-    wine_com1 = Path(args.wine_prefix) / "dosdevices" / "com1"
-    wine_com1.parent.mkdir(parents=True, exist_ok=True)
-    if wine_com1.is_symlink() or wine_com1.exists():
-        wine_com1.unlink()
-    wine_com1.symlink_to(pty_name)
+    wine_com = Path(args.wine_prefix) / "dosdevices" / args.com_port
+    wine_com.parent.mkdir(parents=True, exist_ok=True)
+    if wine_com.is_symlink() or wine_com.exists():
+        wine_com.unlink()
+    wine_com.symlink_to(pty_name)
 
     log = open(args.log, "a", buffering=1, encoding="utf-8")
     running = True
@@ -71,7 +73,7 @@ def main() -> int:
     signal.signal(signal.SIGINT, stop)
     signal.signal(signal.SIGTERM, stop)
 
-    print(f"Wine COM1 -> {wine_com1} -> {pty_name}", flush=True)
+    print(f"Wine {args.com_port.upper()} -> {wine_com} -> {pty_name}", flush=True)
     print(f"Cashier -> {args.device} at {args.baud} 8N1", flush=True)
     print(f"Log -> {args.log}", flush=True)
     print("Open ECR Tool, click ONLY Read currencies, then Ctrl-C here.", flush=True)
