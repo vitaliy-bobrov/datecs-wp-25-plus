@@ -426,6 +426,40 @@ describe('DeviceSession', () => {
     });
     expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 11);
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
+
+    const response = (value: string) => {
+      const body = Uint8Array.from([
+        0x01,
+        ...new TextEncoder().encode(`0039'00??0\t${value}`),
+        0x04,
+        ...status,
+        0x05,
+      ]);
+      const sum = body.slice(1).reduce((total, byte) => total + byte, 0) & 0xffff;
+      const bcc = Array.from(
+        { length: 4 },
+        (_, index) => 0x30 + ((sum >> ((3 - index) * 4)) & 0x0f),
+      );
+      return Uint8Array.from([...body, ...bcc, 0x03]);
+    };
+
+    transport.rx.push(
+      response(''),
+      response('US Dollar TEST'),
+      response(''),
+      response('US Dollar'),
+    );
+    await session.runFullNameWriteTest();
+    expect(session.getSnapshot().writeTestState).toBe('verified');
+    expect(session.getSnapshot().writeTest).toMatchObject({
+      original: 'US Dollar',
+      temporary: 'US Dollar TEST',
+      temporaryReadback: 'US Dollar TEST',
+      restoredReadback: 'US Dollar',
+      restored: true,
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 15);
+    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 
   it('reports an unavailable lock', async () => {

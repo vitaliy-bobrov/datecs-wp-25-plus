@@ -73,18 +73,65 @@ export interface ForeignReadFrame {
   bytes: Uint8Array;
 }
 
-function buildReadQuery(parameter: string, delimiter: number): Uint8Array {
-  const data = new TextEncoder().encode(parameter);
-  const prefix = [
-    0x01,
-    ...nibbles(data.length + 0x2a),
-    delimiter,
-    ...new TextEncoder().encode('00??'),
-    ...data,
-    0x05,
-  ];
+function buildFrame(data: Uint8Array, delimiter: number): Uint8Array {
+  const prefix = [0x01, ...nibbles(data.length + 0x2a), delimiter, ...data, 0x05];
   const checksum = sumFromStxToEnq(Uint8Array.from(prefix), prefix.length - 1);
   return Uint8Array.from([...prefix, ...nibbles(checksum), 0x03]);
+}
+
+function buildReadQuery(parameter: string, delimiter: number): Uint8Array {
+  return buildFrame(new TextEncoder().encode(`00??${parameter}`), delimiter);
+}
+
+const CP1250: Record<string, number> = {
+  '\u0105': 0xb9,
+  '\u0104': 0xa5,
+  '\u0107': 0xe6,
+  '\u0106': 0xc6,
+  '\u0119': 0xea,
+  '\u0118': 0xca,
+  '\u0142': 0xb3,
+  '\u0141': 0xa3,
+  '\u0144': 0xf1,
+  '\u0143': 0xd1,
+  '\u00f3': 0xf3,
+  '\u00d3': 0xd3,
+  '\u015b': 0x9c,
+  '\u015a': 0x8c,
+  '\u017a': 0x9f,
+  '\u0179': 0x8f,
+  '\u017c': 0xbf,
+  '\u017b': 0xaf,
+};
+
+function encodeCp1250(value: string): Uint8Array | null {
+  const bytes: number[] = [];
+  for (const char of value) {
+    const code = char.codePointAt(0) ?? 0;
+    if (code < 0x80) {
+      bytes.push(code);
+      continue;
+    }
+    const mapped = CP1250[char];
+    if (mapped === undefined) return null;
+    bytes.push(mapped);
+  }
+  return Uint8Array.from(bytes);
+}
+
+export function buildFullNameWrite(value: string, delimiter = 0x32): Uint8Array | null {
+  const encoded = encodeCp1250(value);
+  if (!encoded) return null;
+  const data = Uint8Array.from([
+    ...new TextEncoder().encode('00??CurrFullNameForeign\t0\t'),
+    ...encoded,
+    0x09,
+  ]);
+  return buildFrame(data, delimiter);
+}
+
+export function buildFullNameReadback(delimiter = 0x33): Uint8Array {
+  return buildReadQuery('CurrFullNameForeign\t0\t\t', delimiter);
 }
 
 export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [

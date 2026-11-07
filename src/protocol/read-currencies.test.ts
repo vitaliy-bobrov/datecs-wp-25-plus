@@ -105,3 +105,23 @@ describe('converter read', () => {
     );
   });
 });
+
+describe('single-field full-name write test', () => {
+  it('writes the same CP1250 full name with no 0xFF and a valid BCC', async () => {
+    const { buildFullNameWrite, buildFullNameReadback } = await import('./read-currencies');
+    const write = buildFullNameWrite('dolar amerykański');
+    expect(write).not.toBeNull();
+    const frame = write as Uint8Array;
+    expect(frame.includes(0xff)).toBe(false);
+    expect(frame.includes(0xf1)).toBe(true);
+    const enq = frame.length - 6;
+    expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
+    const readback = buildFullNameReadback();
+    expect(readback.includes(0xff)).toBe(false);
+  });
+
+  it('rejects unsupported characters', async () => {
+    const { buildFullNameWrite } = await import('./read-currencies');
+    expect(buildFullNameWrite('dolar €')).toBeNull();
+  });
+});

@@ -14,6 +14,8 @@ import {
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
 import type { ReadResponse } from '../protocol/read-currencies';
 import {
+  buildFullNameReadback,
+  buildFullNameWrite,
   CONVERTER_READ_FRAMES,
   FOREIGN_READ_FRAMES,
   parseReadResponse,
@@ -56,6 +58,17 @@ interface LocalReadResult {
 type ForeignReadState = 'idle' | 'reading' | 'read' | 'failed';
 
 type ConverterReadState = 'idle' | 'reading' | 'read' | 'failed';
+type WriteTestState = 'idle' | 'writing' | 'verified' | 'failed';
+
+interface WriteTestResult {
+  field: string;
+  original: string;
+  temporary: string;
+  temporaryReadback?: string;
+  restoredReadback?: string;
+  restored: boolean;
+  message?: string;
+}
 
 interface ConverterReadResult {
   name?: string;
@@ -86,10 +99,12 @@ export interface SessionSnapshot {
   readState: ReadState;
   foreignReadState: ForeignReadState;
   converterReadState: ConverterReadState;
+  writeTestState: WriteTestState;
   preflight?: PreflightResult;
   localRead?: LocalReadResult;
   foreignRead?: ForeignReadResult;
   converterRead?: ConverterReadResult;
+  writeTest?: WriteTestResult;
   capture: readonly CaptureEntry[];
 }
 
@@ -130,6 +145,7 @@ export class DeviceSession {
     readState: 'idle',
     foreignReadState: 'idle',
     converterReadState: 'idle',
+    writeTestState: 'idle',
     capture: [],
   };
 
@@ -190,10 +206,12 @@ export class DeviceSession {
       readState: 'idle',
       foreignReadState: 'idle',
       converterReadState: 'idle',
+      writeTestState: 'idle',
       preflight: undefined,
       localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      writeTest: undefined,
       error: undefined,
     });
     this.append({
@@ -278,10 +296,12 @@ export class DeviceSession {
       readState: 'idle',
       foreignReadState: 'idle',
       converterReadState: 'idle',
+      writeTestState: 'idle',
       preflight: undefined,
       localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      writeTest: undefined,
     });
   }
 
@@ -497,9 +517,11 @@ export class DeviceSession {
       readState: 'reading',
       foreignReadState: 'idle',
       converterReadState: 'idle',
+      writeTestState: 'idle',
       localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      writeTest: undefined,
     });
 
     const results = await this.readFrameSequence(
@@ -569,8 +591,10 @@ export class DeviceSession {
     this.set({
       foreignReadState: 'reading',
       converterReadState: 'idle',
+      writeTestState: 'idle',
       foreignRead: undefined,
       converterRead: undefined,
+      writeTest: undefined,
     });
 
     const results = await this.readFrameSequence(
@@ -646,7 +670,12 @@ export class DeviceSession {
     const generation = this.preflightGeneration;
     const transportKind = this.snapshot.transportKind;
     const environment = environmentDetail();
-    this.set({ converterReadState: 'reading', converterRead: undefined });
+    this.set({
+      converterReadState: 'reading',
+      writeTestState: 'idle',
+      converterRead: undefined,
+      writeTest: undefined,
+    });
 
     const results = await this.readFrameSequence(
       CONVERTER_READ_FRAMES,
@@ -818,6 +847,184 @@ export class DeviceSession {
     return raw;
   }
 
+  async runFullNameWriteTest(): Promise<void> {
+    const transport = this.transport;
+    const original = this.snapshot.foreignRead?.slot0FullName;
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.transportKind !== 'webserial' ||
+      this.snapshot.readState !== 'read' ||
+      this.snapshot.foreignReadState !== 'read' ||
+      this.snapshot.converterReadState !== 'read' ||
+      this.snapshot.writeTestState === 'writing' ||
+      !original
+    ) {
+      return;
+    }
+
+    const temporary = `${original} TEST`;
+    const writeTemporary = buildFullNameWrite(temporary, 0x32);
+    const readTemporary = buildFullNameReadback(0x33);
+    const writeRestore = buildFullNameWrite(original, 0x34);
+    const readRestore = buildFullNameReadback(0x35);
+    if (!writeTemporary || !writeRestore) {
+      this.set({
+        writeTestState: 'failed',
+        writeTest: {
+          field: 'slot0FullName',
+          original,
+          temporary,
+          restored: true,
+          message: 'The full name contains characters outside Windows-1250.',
+        },
+      });
+      return;
+    }
+
+    const generation = this.preflightGeneration;
+    const transportKind = this.snapshot.transportKind;
+    const environment = environmentDetail();
+    let temporaryAttempted = false;
+    let temporaryReadback: string | undefined;
+    let restoredReadback: string | undefined;
+    let restored = false;
+    this.set({ writeTestState: 'writing', writeTest: undefined });
+
+    const sendWrite = async (bytes: Uint8Array, label: string): Promise<void> => {
+      void label;
+      await transport.write(bytes);
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes,
+        message: `Write test: ${label}`,
+      });
+      const raw = await this.readLocalResponse(
+        transport,
+        transportKind,
+        generation,
+        'Write test response',
+      );
+      if (!this.isCurrentPreflight(transport, generation)) throw new Error('Session changed.');
+      if (raw.length === 0) throw new Error('No write response within 500 ms.');
+      if (!parseReadResponse(raw)) throw new Error('Write response was not a valid Type2 frame.');
+    };
+
+    const readName = async (bytes: Uint8Array, label: string): Promise<string> => {
+      await transport.write(bytes);
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes,
+        message: `Write test readback: ${label}`,
+      });
+      const raw = await this.readLocalResponse(
+        transport,
+        transportKind,
+        generation,
+        'Write test readback',
+      );
+      if (!this.isCurrentPreflight(transport, generation)) throw new Error('Session changed.');
+      if (raw.length === 0) throw new Error('No readback within 500 ms.');
+      const parsed = parseReadResponse(raw);
+      const value = parsed?.fields[0];
+      if (value === undefined) throw new Error('Readback was not a valid Type2 frame.');
+      return value;
+    };
+
+    try {
+      this.append({
+        kind: 'info',
+        transport: transportKind,
+        message: 'One-field full-name write test starting',
+        detail: {
+          field: 'slot0FullName',
+          original,
+          temporary,
+          writeHex: toHex(writeTemporary),
+          ...environment,
+        },
+      });
+
+      temporaryAttempted = true;
+      await sendWrite(writeTemporary, 'temporary full name');
+      temporaryReadback = await readName(readTemporary, 'temporary value');
+      if (temporaryReadback !== temporary) {
+        throw new Error(`Temporary readback mismatch: ${temporaryReadback}`);
+      }
+
+      await sendWrite(writeRestore, 'restore original full name');
+      restoredReadback = await readName(readRestore, 'restored value');
+      if (restoredReadback !== original) {
+        throw new Error(`Restore readback mismatch: ${restoredReadback}`);
+      }
+      restored = true;
+
+      this.append({
+        kind: 'info',
+        transport: transportKind,
+        message: 'One-field full-name write test verified',
+        detail: { original, temporary, temporaryReadback, restoredReadback, ...environment },
+      });
+      this.set({
+        writeTestState: 'verified',
+        writeTest: {
+          field: 'slot0FullName',
+          original,
+          temporary,
+          temporaryReadback,
+          restoredReadback,
+          restored: true,
+        },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (temporaryAttempted && !restored) {
+        this.append({
+          kind: 'info',
+          transport: transportKind,
+          message: 'Attempting to restore the original full name',
+        });
+        try {
+          await sendWrite(writeRestore, 'restore after failure');
+          restoredReadback = await readName(readRestore, 'restore after failure');
+          restored = restoredReadback === original;
+        } catch {
+          restored = false;
+        }
+      }
+      this.append({
+        kind: 'error',
+        code: 'unknown',
+        message: 'One-field full-name write test failed.',
+        errorMessage: message,
+        detail: {
+          original,
+          temporary,
+          temporaryReadback,
+          restoredReadback,
+          restored,
+          ...environment,
+        },
+      });
+      this.set({
+        writeTestState: 'failed',
+        writeTest: {
+          field: 'slot0FullName',
+          original,
+          temporary,
+          temporaryReadback,
+          restoredReadback,
+          restored,
+          message,
+        },
+      });
+    }
+  }
+
   clearCapture(): void {
     this.capture.clear();
     this.snapshot = {
@@ -827,10 +1034,12 @@ export class DeviceSession {
       readState: 'idle',
       foreignReadState: 'idle',
       converterReadState: 'idle',
+      writeTestState: 'idle',
       preflight: undefined,
       localRead: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      writeTest: undefined,
     };
     this.emit();
   }

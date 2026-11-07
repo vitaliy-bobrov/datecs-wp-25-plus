@@ -120,6 +120,20 @@ export function App({ session }: AppProps) {
     void session.connect(kind);
   };
 
+  const runWriteTest = () => {
+    const original = snapshot.foreignRead?.slot0FullName;
+    if (!original) return;
+    const approved = window.confirm(
+      `One-field production write test.\n\n` +
+        `Field: slot 0 full name\n` +
+        `Current: ${original}\n` +
+        `Temporary: ${original} TEST\n\n` +
+        `It will write the temporary name, read it back, restore the original, and read it back again. ` +
+        `No rate, short name, flag or converter value is touched. Continue?`,
+    );
+    if (approved) void session.runFullNameWriteTest();
+  };
+
   const download = (format: 'jsonl' | 'text') => {
     const file = captureDownload(format, session);
     downloadText(file.filename, file.text, file.mime);
@@ -142,8 +156,8 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Currency reader</h1>
           <p className="lede">
-            Read-only Web Serial connection with preflight, exact local PLN read, experimental
-            foreign slots and NBP reference. No <code>0xFF</code> and no write.
+            Web Serial connection with preflight, local and foreign reads, NBP comparison and a
+            one-field full-name write test. No <code>0xFF</code>; no rate or multi-field write.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -440,6 +454,60 @@ export function App({ session }: AppProps) {
               </dl>
             ) : null}
           </div>
+
+          <div className="foreign-probe write-test">
+            <div className="card-heading">
+              <div>
+                <h4>One-field write test</h4>
+                <p className="muted">
+                  Writes only slot 0 full name: temporary marker, readback, restore, readback. One
+                  field, two writes, no rates or flags. Production-first experiment.
+                </p>
+              </div>
+              <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
+                {stateLabel(snapshot.writeTestState)}
+              </span>
+            </div>
+            <button
+              type="button"
+              className="button"
+              onClick={runWriteTest}
+              disabled={
+                !snapshot.converterRead ||
+                snapshot.writeTestState === 'writing' ||
+                !snapshot.foreignRead?.slot0FullName
+              }
+            >
+              {snapshot.writeTestState === 'writing' ? 'Writing…' : 'Run one-field write test'}
+            </button>
+            {snapshot.foreignRead?.slot0FullName ? (
+              <p className="muted test-value">
+                Current full name: <code>{snapshot.foreignRead.slot0FullName}</code>
+              </p>
+            ) : null}
+            {snapshot.writeTest ? (
+              <dl className="read-values">
+                <div>
+                  <dt>Temporary readback</dt>
+                  <dd>{snapshot.writeTest.temporaryReadback ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Restored readback</dt>
+                  <dd>{snapshot.writeTest.restoredReadback ?? '—'}</dd>
+                </div>
+                <div>
+                  <dt>Restored</dt>
+                  <dd>{snapshot.writeTest.restored ? 'Yes' : 'No'}</dd>
+                </div>
+                {snapshot.writeTest.message ? (
+                  <div>
+                    <dt>Result</dt>
+                    <dd>{snapshot.writeTest.message}</dd>
+                  </div>
+                ) : null}
+              </dl>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -542,8 +610,8 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Read-only local and experimental foreign-slot reads. No converter read, <code>0xFF</code>
-          or write is implemented.
+          Read-only records plus one explicit slot-0 full-name write test. No rate or multi-field
+          write, and no <code>0xFF</code>.
         </p>
       </footer>
     </main>
