@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { toHex } from '../domain/capture-log';
 import { bccMatches, sumFromStxToEnq } from './preflight';
 import {
+  buildRateReadback,
+  buildRateWrite,
   CONVERTER_READ_FRAMES,
   FOREIGN_READ_FRAMES,
   parseReadResponse,
@@ -151,5 +153,20 @@ describe('single-field full-name write test', () => {
   it('rejects unsupported characters', async () => {
     const { buildFullNameWrite } = await import('./read-currencies');
     expect(buildFullNameWrite('dolar €')).toBeNull();
+  });
+});
+
+describe('single-rate write test', () => {
+  it('builds a rate write and readback without 0xFF', () => {
+    const write = buildRateWrite('39252');
+    const readback = buildRateReadback();
+    expect(write.includes(0xff)).toBe(false);
+    expect(readback.includes(0xff)).toBe(false);
+    const enq = write.length - 6;
+    expect(bccMatches(write, enq + 1, sumFromStxToEnq(write, enq))).toBe(true);
+    expect(toHex(write)).toBe(
+      '013030333f3230303f3f45786368616e6765526174650930093339323532090530373e3603',
+    );
+    expect(new TextDecoder().decode(write)).toContain('ExchangeRate');
   });
 });

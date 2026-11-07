@@ -16,6 +16,8 @@ import type { ReadResponse } from '../protocol/read-currencies';
 import {
   buildFullNameReadback,
   buildFullNameWrite,
+  buildRateReadback,
+  buildRateWrite,
   CONVERTER_READ_FRAMES,
   FOREIGN_READ_FRAMES,
   parseReadResponse,
@@ -865,8 +867,40 @@ export class DeviceSession {
   }
 
   async runFullNameWriteTest(): Promise<void> {
-    const transport = this.transport;
     const original = this.snapshot.foreignRead?.slot0FullName;
+    if (!original) return;
+    const first = original[0] === 'X' ? 'Y' : 'X';
+    await this.executeWriteTest(
+      'slot0FullName',
+      original,
+      `${first}${original.slice(1)}`,
+      buildFullNameWrite,
+      buildFullNameReadback,
+    );
+  }
+
+  async runRateWriteTest(): Promise<void> {
+    const original = this.snapshot.foreignRead?.slot0Rate;
+    if (!original || !/^\d+$/.test(original)) return;
+    const last = original.at(-1) ?? '0';
+    const nextLast = last === '9' ? '8' : String(Number(last) + 1);
+    await this.executeWriteTest(
+      'slot0Rate',
+      original,
+      `${original.slice(0, -1)}${nextLast}`,
+      buildRateWrite,
+      buildRateReadback,
+    );
+  }
+
+  private async executeWriteTest(
+    field: 'slot0FullName' | 'slot0Rate',
+    original: string,
+    temporary: string,
+    buildWrite: (value: string, delimiter: number) => Uint8Array | null,
+    buildRead: (delimiter: number) => Uint8Array,
+  ): Promise<void> {
+    const transport = this.transport;
     if (
       this.snapshot.phase !== 'connected' ||
       !transport ||
@@ -874,28 +908,25 @@ export class DeviceSession {
       this.snapshot.readState !== 'read' ||
       this.snapshot.foreignReadState !== 'read' ||
       this.snapshot.converterReadState !== 'read' ||
-      this.snapshot.writeTestState === 'writing' ||
-      !original
+      this.snapshot.writeTestState === 'writing'
     ) {
       return;
     }
 
-    const first = original[0] === 'X' ? 'Y' : 'X';
-    const temporary = `${first}${original.slice(1)}`;
-    const readPrecheck = buildFullNameReadback(0x32);
-    const writeTemporary = buildFullNameWrite(temporary, 0x33);
-    const readTemporary = buildFullNameReadback(0x34);
-    const writeRestore = buildFullNameWrite(original, 0x35);
-    const readRestore = buildFullNameReadback(0x36);
+    const readPrecheck = buildRead(0x32);
+    const writeTemporary = buildWrite(temporary, 0x33);
+    const readTemporary = buildRead(0x34);
+    const writeRestore = buildWrite(original, 0x35);
+    const readRestore = buildRead(0x36);
     if (!writeTemporary || !writeRestore) {
       this.set({
         writeTestState: 'failed',
         writeTest: {
-          field: 'slot0FullName',
+          field,
           original,
           temporary,
           restored: true,
-          message: 'The full name contains characters unsupported by the Polish CP1250 encoder.',
+          message: 'The value contains characters unsupported by the encoder.',
         },
       });
       return;
@@ -911,14 +942,13 @@ export class DeviceSession {
     this.set({ writeTestState: 'writing', writeTest: undefined });
 
     const sendWrite = async (bytes: Uint8Array, label: string): Promise<void> => {
-      void label;
       await transport.write(bytes);
       this.append({
         kind: 'tx',
         direction: 'tx',
         transport: transportKind,
         bytes,
-        message: `Write test: ${label}`,
+        message: `Write test (${field}): ${label}`,
       });
       const raw = await this.readResponseBytes(
         transport,
@@ -936,14 +966,14 @@ export class DeviceSession {
       }
     };
 
-    const readName = async (bytes: Uint8Array, label: string): Promise<string> => {
+    const readValue = async (bytes: Uint8Array, label: string): Promise<string> => {
       await transport.write(bytes);
       this.append({
         kind: 'tx',
         direction: 'tx',
         transport: transportKind,
         bytes,
-        message: `Write test readback: ${label}`,
+        message: `Write test readback (${field}): ${label}`,
       });
       const raw = await this.readResponseBytes(
         transport,
@@ -967,31 +997,23 @@ export class DeviceSession {
       this.append({
         kind: 'info',
         transport: transportKind,
-        message: 'One-field full-name write test starting',
-        detail: {
-          field: 'slot0FullName',
-          original,
-          temporary,
-          writeHex: toHex(writeTemporary),
-          ...environment,
-        },
+        message: `One-field write test starting (${field})`,
+        detail: { field, original, temporary, writeHex: toHex(writeTemporary), ...environment },
       });
 
-      const fresh = await readName(readPrecheck, 'fresh current value');
-      if (fresh !== original) {
-        throw new Error(`Full name changed since the read: ${fresh}`);
-      }
+      const fresh = await readValue(readPrecheck, 'fresh current value');
+      if (fresh !== original) throw new Error(`Value changed since the read: ${fresh}`);
 
       temporaryAttempted = true;
       restored = false;
-      await sendWrite(writeTemporary, 'temporary full name');
-      temporaryReadback = await readName(readTemporary, 'temporary value');
+      await sendWrite(writeTemporary, 'temporary value');
+      temporaryReadback = await readValue(readTemporary, 'temporary value');
       if (temporaryReadback !== temporary) {
         throw new Error(`Temporary readback mismatch: ${temporaryReadback}`);
       }
 
-      await sendWrite(writeRestore, 'restore original full name');
-      restoredReadback = await readName(readRestore, 'restored value');
+      await sendWrite(writeRestore, 'restore original value');
+      restoredReadback = await readValue(readRestore, 'restored value');
       if (restoredReadback !== original) {
         throw new Error(`Restore readback mismatch: ${restoredReadback}`);
       }
@@ -1000,13 +1022,13 @@ export class DeviceSession {
       this.append({
         kind: 'info',
         transport: transportKind,
-        message: 'One-field full-name write test verified',
-        detail: { original, temporary, temporaryReadback, restoredReadback, ...environment },
+        message: `One-field write test verified (${field})`,
+        detail: { field, original, temporary, temporaryReadback, restoredReadback, ...environment },
       });
       this.set({
         writeTestState: 'verified',
         writeTest: {
-          field: 'slot0FullName',
+          field,
           original,
           temporary,
           temporaryReadback,
@@ -1020,11 +1042,11 @@ export class DeviceSession {
         this.append({
           kind: 'info',
           transport: transportKind,
-          message: 'Attempting to restore the original full name',
+          message: `Attempting to restore the original value (${field})`,
         });
         try {
           await sendWrite(writeRestore, 'restore after failure');
-          restoredReadback = await readName(readRestore, 'restore after failure');
+          restoredReadback = await readValue(readRestore, 'restore after failure');
           restored = restoredReadback === original;
         } catch {
           restored = false;
@@ -1033,9 +1055,10 @@ export class DeviceSession {
       this.append({
         kind: 'error',
         code: 'unknown',
-        message: 'One-field full-name write test failed.',
+        message: `One-field write test failed (${field}).`,
         errorMessage: message,
         detail: {
+          field,
           original,
           temporary,
           temporaryReadback,
@@ -1047,7 +1070,7 @@ export class DeviceSession {
       this.set({
         writeTestState: 'failed',
         writeTest: {
-          field: 'slot0FullName',
+          field,
           original,
           temporary,
           temporaryReadback,

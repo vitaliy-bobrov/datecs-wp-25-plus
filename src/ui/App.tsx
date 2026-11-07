@@ -3,7 +3,7 @@ import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
 import { errorMessage } from '../domain/nbp';
-import type { CurrencyCode } from '../domain/rates';
+import { type CurrencyCode, formatRateValue, parseRawRate } from '../domain/rates';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -67,6 +67,12 @@ function readErrorMessage(snapshot: SessionSnapshot): string | null {
     return 'The cashier did not return the converter record. Retry the read.';
   }
   return null;
+}
+
+function formatTestRate(value: string | undefined): string {
+  if (!value) return '—';
+  const rate = parseRawRate(value);
+  return rate === null ? value : `${formatRateValue(rate)} (raw ${value})`;
 }
 
 export function App({ session }: AppProps) {
@@ -154,9 +160,11 @@ export function App({ session }: AppProps) {
     }
   };
 
-  const writeOriginal = snapshot.foreignRead?.slot0FullName;
+  const writeOriginal = snapshot.foreignRead?.slot0Rate;
   const writeTemporary = writeOriginal
-    ? `${writeOriginal[0] === 'X' ? 'Y' : 'X'}${writeOriginal.slice(1)}`
+    ? `${writeOriginal.slice(0, -1)}${
+        writeOriginal.at(-1) === '9' ? '8' : String(Number(writeOriginal.at(-1)) + 1)
+      }`
     : '';
 
   const runWriteTest = () => {
@@ -166,7 +174,7 @@ export function App({ session }: AppProps) {
 
   const confirmWriteTest = () => {
     setWriteOpen(false);
-    void session.runFullNameWriteTest();
+    void session.runRateWriteTest();
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -192,7 +200,7 @@ export function App({ session }: AppProps) {
           <h1>Currency reader</h1>
           <p className="lede">
             Web Serial connection with automatic preflight, foreign-slot and converter reads, NBP
-            comparison and a one-field full-name write test. No <code>0xFF</code>; no rate or
+            comparison and a single-rate write test. No <code>0xFF</code>; no full update or
             multi-field write.
           </p>
         </div>
@@ -305,10 +313,10 @@ export function App({ session }: AppProps) {
           <div className="foreign-probe write-test">
             <div className="card-heading">
               <div>
-                <h2 id="write-test-heading">One-field write test</h2>
+                <h2 id="write-test-heading">Single-rate write test</h2>
                 <p className="muted">
-                  Writes only slot 0 full name: temporary marker, readback, restore, readback. One
-                  field, two writes, no rates or flags. Production-first experiment.
+                  Writes only the slot 0 exchange rate: temporary +1 raw unit, readback, restore,
+                  readback. One field, two writes, no names, flags or converter values.
                 </p>
               </div>
               <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
@@ -323,32 +331,32 @@ export function App({ session }: AppProps) {
                 !snapshot.converterRead ||
                 snapshot.readState !== 'read' ||
                 deviceBusy ||
-                !snapshot.foreignRead?.slot0FullName
+                !snapshot.foreignRead?.slot0Rate
               }
             >
-              {snapshot.writeTestState === 'writing' ? 'Writing…' : 'Run one-field write test'}
+              {snapshot.writeTestState === 'writing' ? 'Writing…' : 'Run single-rate write test'}
             </button>
-            {snapshot.foreignRead?.slot0FullName ? (
+            {writeOriginal ? (
               <p className="muted test-value">
-                Current full name: <code>{snapshot.foreignRead.slot0FullName}</code>
+                Current USD rate: <code>{formatTestRate(writeOriginal)}</code>
               </p>
             ) : null}
             {snapshot.writeTest && !snapshot.writeTest.restored ? (
               <p className="plan-warnings" role="alert">
                 Restore did not verify. The cashier may still hold{` `}
-                <code>{snapshot.writeTest.temporary}</code>. Do not run the test again; stop and
-                report the log.
+                <code>{formatTestRate(snapshot.writeTest.temporary)}</code>. Do not run the test
+                again; stop and report the log.
               </p>
             ) : null}
             {snapshot.writeTest ? (
               <dl className="read-values">
                 <div>
                   <dt>Temporary readback</dt>
-                  <dd>{snapshot.writeTest.temporaryReadback ?? '—'}</dd>
+                  <dd>{formatTestRate(snapshot.writeTest.temporaryReadback)}</dd>
                 </div>
                 <div>
                   <dt>Restored readback</dt>
-                  <dd>{snapshot.writeTest.restoredReadback ?? '—'}</dd>
+                  <dd>{formatTestRate(snapshot.writeTest.restoredReadback)}</dd>
                 </div>
                 <div>
                   <dt>Restored</dt>
@@ -459,8 +467,8 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Read-only records plus one explicit slot-0 full-name write test. No rate or multi-field
-          write, and no <code>0xFF</code>.
+          Read-only records plus one explicit slot-0 rate write test. No full or multi-field update,
+          and no <code>0xFF</code>.
         </p>
       </footer>
 
@@ -479,36 +487,36 @@ export function App({ session }: AppProps) {
 
       <ConfirmDialog
         open={writeOpen}
-        title="Run one-field write test?"
+        title="Run single-rate write test?"
         confirmLabel="Run test"
         onConfirm={confirmWriteTest}
         onCancel={() => setWriteOpen(false)}
       >
         <p>
-          This sends two writes to the connected cashier and reads back after each. Use only when
-          the cashier is idle.
+          This temporarily changes the slot 0 USD rate by one raw unit, reads it back, restores it,
+          and reads it back again. Use only when the cashier is idle.
         </p>
         <dl className="read-values">
           <div>
             <dt>Field</dt>
-            <dd>slot 0 full name</dd>
+            <dd>slot 0 exchange rate</dd>
           </div>
           <div>
             <dt>Current</dt>
-            <dd>{writeOriginal}</dd>
+            <dd>{formatTestRate(writeOriginal)}</dd>
           </div>
           <div>
             <dt>Temporary</dt>
-            <dd>{writeTemporary}</dd>
+            <dd>{formatTestRate(writeTemporary)}</dd>
           </div>
           <div>
             <dt>Restore</dt>
-            <dd>{writeOriginal}</dd>
+            <dd>{formatTestRate(writeOriginal)}</dd>
           </div>
         </dl>
         <p>
-          No rate, short name, flag or converter value is touched. If restore fails, the cashier may
-          keep the temporary name; stop and report the log.
+          No name, short-name, Change-after-Z or converter value is touched. If restore fails, the
+          cashier may keep the temporary rate; stop and report the log.
         </p>
       </ConfirmDialog>
     </main>

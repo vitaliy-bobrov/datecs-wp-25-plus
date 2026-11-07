@@ -134,6 +134,14 @@ export function buildFullNameWrite(value: string, delimiter = 0x32): Uint8Array 
 export function buildFullNameReadback(delimiter = 0x33): Uint8Array {
   return buildReadQuery('CurrFullNameForeign\t0\t\t', delimiter);
 }
+export function buildRateWrite(value: string, delimiter = 0x32): Uint8Array {
+  const data = new TextEncoder().encode(`00??ExchangeRate\t0\t${value}\t`);
+  return buildFrame(data, delimiter, data.length - 4);
+}
+
+export function buildRateReadback(delimiter = 0x33): Uint8Array {
+  return buildReadQuery('ExchangeRate\t0\t\t', delimiter);
+}
 
 export const FOREIGN_READ_FRAMES: ForeignReadFrame[] = [
   { label: 'slot0Name', bytes: buildReadQuery('CurrNameForeign\t0\t\t', 0x27) },

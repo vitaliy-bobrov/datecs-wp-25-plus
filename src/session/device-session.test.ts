@@ -435,6 +435,38 @@ describe('DeviceSession', () => {
     expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8);
   });
 
+  it('runs the single-rate write test and restores the original rate', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('', '3'),
+      type2Response('39252', '4'),
+      type2Response('', '5'),
+      type2Response('39251', '6'),
+    );
+    await session.runRateWriteTest();
+
+    expect(session.getSnapshot().writeTestState).toBe('verified');
+    expect(session.getSnapshot().writeTest).toMatchObject({
+      field: 'slot0Rate',
+      original: '39251',
+      temporary: '39252',
+      temporaryReadback: '39252',
+      restoredReadback: '39251',
+      restored: true,
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 5);
+    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
+  });
+
   it('fails the local read visibly when no response arrives', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
