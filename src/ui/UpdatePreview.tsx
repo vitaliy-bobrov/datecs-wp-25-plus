@@ -20,6 +20,7 @@ interface UpdatePreviewProps {
   foreign?: ForeignRecordSnapshot;
   converter?: ConverterSnapshot;
   nbp: NbpState;
+  readFresh: boolean;
   updateState: 'idle' | 'updating' | 'verified' | 'failed';
   updateResult?: FullUpdateResult;
   onRequestUpdate: (targets: UpdateTargets) => void;
@@ -29,6 +30,7 @@ export function UpdatePreview({
   foreign,
   converter,
   nbp,
+  readFresh,
   updateState,
   updateResult,
   onRequestUpdate,
@@ -83,6 +85,20 @@ export function UpdatePreview({
       : printCurrent === printTarget
         ? 'No change'
         : `${printCurrent} → ${printTarget}`;
+  const currentLabel = readFresh ? 'Cashier now' : 'Last read';
+  const readGate = !readFresh ? (
+    <div className="panel-body update-empty-gate">
+      <p className="hint update-read-gate">
+        Cashier records are not current. Read again before updating; the values above are the last
+        complete read.
+      </p>
+      <div className="button-row update-actions">
+        <button type="button" className="button primary" aria-disabled="true">
+          Review update
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <section className="card panel update-preview" aria-labelledby="update-preview-heading">
@@ -97,16 +113,22 @@ export function UpdatePreview({
       </div>
 
       {nbp.status !== 'ready' ? (
-        <p className="empty">NBP reference is not ready.</p>
+        <>
+          <p className="empty">NBP reference is not ready.</p>
+          {readGate}
+        </>
       ) : !plan ? (
-        <p className="empty">Complete the foreign reads and NBP reference to build a preview.</p>
+        <>
+          <p className="empty">Complete the foreign reads and NBP reference to build a preview.</p>
+          {readGate}
+        </>
       ) : (
         <div className="panel-body">
           <table className="comparison-table plan-table desktop-table">
             <thead>
               <tr>
                 <th scope="col">Record</th>
-                <th scope="col">Cashier now</th>
+                <th scope="col">{currentLabel}</th>
                 <th scope="col">Update to</th>
                 <th scope="col">Change</th>
               </tr>
@@ -135,7 +157,7 @@ export function UpdatePreview({
                 <article className="record" key={row.key}>
                   <h3 className="record-title">{row.label}</h3>
                   <dl className="record-list">
-                    <dt>Cashier now</dt>
+                    <dt>{currentLabel}</dt>
                     <dd>{row.current === null ? '—' : formatRateValue(row.current)}</dd>
                     <dt>Update to</dt>
                     <dd>{formatRateValue(row.target)}</dd>
@@ -195,10 +217,12 @@ export function UpdatePreview({
             </ul>
           ) : null}
 
-          <p className={plan.hasChanges ? 'hint' : 'empty'}>
-            {plan.hasChanges
-              ? 'Changes are ready for the update gate.'
-              : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
+          <p className={readFresh && plan.hasChanges ? 'hint' : 'empty'}>
+            {!readFresh
+              ? 'Last complete read loaded. Read again before updating.'
+              : plan.hasChanges
+                ? 'Changes are ready for the update gate.'
+                : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
           </p>
 
           <p className="hint">
@@ -208,19 +232,28 @@ export function UpdatePreview({
             No write occurs until you confirm Update cashier.
           </p>
 
+          {!readFresh ? (
+            <p className="hint update-read-gate">
+              Cashier records are not current. Read again before updating; the values above are the
+              last complete read.
+            </p>
+          ) : null}
+
           <div className="button-row update-actions">
             <button
               type="button"
               className="button primary"
+              aria-disabled={!readFresh}
               disabled={
-                !plan.hasChanges ||
-                !plan.converter ||
-                updateState === 'updating' ||
-                (updateState === 'failed' && updateResult?.restored === false) ||
-                !onRequestUpdate
+                readFresh &&
+                (!plan.hasChanges ||
+                  !plan.converter ||
+                  updateState === 'updating' ||
+                  (updateState === 'failed' && updateResult?.restored === false) ||
+                  !onRequestUpdate)
               }
               onClick={() => {
-                if (!plan.converter) return;
+                if (!readFresh || !plan.converter) return;
                 onRequestUpdate({
                   usdRaw: plan.usd.targetRaw,
                   eurRaw: plan.eur.targetRaw,

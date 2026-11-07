@@ -98,26 +98,34 @@ const localResponses = [
   Uint8Array.from((value.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16))),
 );
 
-function queueReadFlow(transport: FakeTransport): void {
-  transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+function queueForeign(transport: FakeTransport, usdRate = '39251', eurRate = '43955'): void {
   const foreign = [
     ['USD', "'"],
-    ['39251', '('],
+    [usdRate, '('],
     ['EUR', ')'],
-    ['43955', '*'],
+    [eurRate, '*'],
     ['US Dollar', '+'],
     ['1', ','],
     ['Euro', '-'],
     ['0', '.'],
   ] as const;
   for (const [value, delimiter] of foreign) transport.rx.push(type2Response(value, delimiter));
+}
+
+function queueConverter(transport: FakeTransport, rate = '39251', printFlag = '1'): void {
   for (const [value, delimiter] of [
     ['Konwerter', '/'],
-    ['39251', '0'],
-    ['1', '1'],
+    [rate, '0'],
+    [printFlag, '1'],
   ] as const) {
     transport.rx.push(type2Response(value, delimiter));
   }
+}
+
+function queueReadFlow(transport: FakeTransport): void {
+  transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+  queueForeign(transport);
+  queueConverter(transport);
 }
 
 async function runReadFlow(session: DeviceSession): Promise<void> {
@@ -543,6 +551,15 @@ describe('DeviceSession', () => {
       targets: { usdRaw: 39321, eurRaw: 43925, converterRaw: 39321, printFlag: '1' },
       restored: true,
     });
+    expect(session.getSnapshot().lastRead?.foreignRead).toMatchObject({
+      slot0Rate: '39321',
+      slot1Rate: '43925',
+    });
+    expect(session.getSnapshot().lastRead?.converterRead).toMatchObject({
+      rate: '39321',
+      printFlag: '1',
+    });
+    expect(session.getSnapshot().lastRead?.at).toBe('2026-11-06T08:00:00.000Z');
     expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 12);
     expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
@@ -665,7 +682,156 @@ describe('DeviceSession', () => {
     ).toBe(true);
   });
 
-  it('clears foreign, converter and write-test state before a new preflight', async () => {
+  it('caches the last complete read with the capture timestamp', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    const lastRead = session.getSnapshot().lastRead;
+    expect(lastRead?.foreignRead).toMatchObject({
+      slot0Name: 'USD',
+      slot0Rate: '39251',
+      slot1Name: 'EUR',
+      slot1Rate: '43955',
+    });
+    expect(lastRead?.converterRead).toMatchObject({
+      name: 'Konwerter',
+      rate: '39251',
+      printFlag: '1',
+    });
+    expect(lastRead?.at).toBe('2026-11-06T08:00:00.000Z');
+  });
+
+  it('replaces the cached read after a successful refresh', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+    queueForeign(transport, '40000', '44000');
+    queueConverter(transport, '40000', '0');
+    await session.runPreflight();
+    await session.runReadForeign();
+    await session.runReadConverter();
+
+    expect(session.getSnapshot().foreignRead?.slot0Rate).toBe('40000');
+    expect(session.getSnapshot().lastRead?.foreignRead).toMatchObject({
+      slot0Rate: '40000',
+      slot1Rate: '44000',
+    });
+    expect(session.getSnapshot().lastRead?.converterRead).toMatchObject({
+      rate: '40000',
+      printFlag: '0',
+    });
+  });
+
+  it('retains the last complete read when a refresh fails', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+    await session.runPreflight();
+    await session.runReadForeign();
+
+    expect(session.getSnapshot().foreignReadState).toBe('failed');
+    expect(session.getSnapshot().foreignRead).toBeUndefined();
+    expect(session.getSnapshot().lastRead?.foreignRead.slot0Rate).toBe('39251');
+    expect(session.getSnapshot().lastRead?.converterRead.rate).toBe('39251');
+  });
+
+  it('retains the last complete pair when a refresh is partial', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+    queueForeign(transport, '40000', '44000');
+    await session.runPreflight();
+    await session.runReadForeign();
+    await session.runReadConverter();
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.foreignReadState).toBe('read');
+    expect(snapshot.foreignRead?.slot0Rate).toBe('40000');
+    expect(snapshot.converterReadState).toBe('failed');
+    expect(snapshot.converterRead).toBeUndefined();
+    expect(snapshot.lastRead?.foreignRead.slot0Rate).toBe('39251');
+    expect(snapshot.lastRead?.converterRead.rate).toBe('39251');
+  });
+
+  it('has no cached read after the first read fails', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE);
+
+    await session.runPreflight();
+    await session.runReadLocal();
+
+    expect(session.getSnapshot().readState).toBe('failed');
+    expect(session.getSnapshot().lastRead).toBeUndefined();
+  });
+
+  it('clears the cached read on disconnect', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+    expect(session.getSnapshot().lastRead).toBeDefined();
+
+    await session.disconnect();
+
+    expect(session.getSnapshot().lastRead).toBeUndefined();
+  });
+
+  it('clears the cached read when the log is cleared', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    session.clearCapture();
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.lastRead).toBeUndefined();
+    expect(snapshot.foreignRead).toBeUndefined();
+    expect(snapshot.converterRead).toBeUndefined();
+    expect(snapshot.capture).toHaveLength(0);
+  });
+
+  it('clears current read state before a new preflight but retains the cached read', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
     await session.acquireLock();
@@ -684,6 +850,8 @@ describe('DeviceSession', () => {
     expect(session.getSnapshot().writeTestState).toBe('idle');
     expect(session.getSnapshot().foreignRead).toBeUndefined();
     expect(session.getSnapshot().converterRead).toBeUndefined();
+    expect(session.getSnapshot().lastRead?.foreignRead.slot0Rate).toBe('39251');
+    expect(session.getSnapshot().lastRead?.converterRead.rate).toBe('39251');
   });
 
   it('reports an unavailable lock', async () => {

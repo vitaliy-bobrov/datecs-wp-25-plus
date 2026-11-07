@@ -131,7 +131,8 @@ a {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
-summary:focus-visible {
+summary:focus-visible,
+[tabindex]:focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 3px;
 }
@@ -461,6 +462,32 @@ summary:focus-visible {
   border-color: color-mix(in srgb, var(--danger-text) 36%, var(--border));
 }
 
+.state-last-read {
+  color: var(--ink-secondary);
+  border-color: var(--border);
+}
+
+.state-refreshing {
+  color: var(--signal-amber);
+  border-color: color-mix(in srgb, var(--signal-amber) 36%, var(--border));
+}
+
+.state-note {
+  color: var(--ink-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.panel-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
 /* Keys -------------------------------------------------------------------- */
 
 .button {
@@ -613,6 +640,10 @@ summary:focus-visible {
 }
 
 .status {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 5rem;
   padding: 10px 12px;
   border-left: 3px solid var(--border);
   background: var(--body-recessed);
@@ -621,18 +652,15 @@ summary:focus-visible {
   line-height: 1.5;
 }
 
+.status-title {
+  display: block;
+  font-weight: 700;
+}
+
 .status-error {
   border-left-color: var(--danger-text);
   background: color-mix(in srgb, var(--danger-text) 7%, var(--body-raised));
   color: var(--danger-text);
-}
-
-.read-error {
-  border-left: 3px solid var(--danger-text);
-}
-
-.read-error .panel-head {
-  border-left: 0;
 }
 
 /* Tables and receipt records ---------------------------------------------- */
@@ -898,6 +926,10 @@ summary:focus-visible {
   margin: 0;
   accent-color: var(--focus);
   flex: 0 0 auto;
+}
+
+.idle-gate {
+  margin-top: 0;
 }
 
 .plan-warnings {

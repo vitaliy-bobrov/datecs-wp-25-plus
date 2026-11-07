@@ -36,17 +36,22 @@ const nbp: NbpState = {
   },
 };
 
+function render(readFresh: boolean): string {
+  return renderToStaticMarkup(
+    <UpdatePreview
+      foreign={foreign}
+      converter={converter}
+      nbp={nbp}
+      readFresh={readFresh}
+      updateState="idle"
+      onRequestUpdate={() => undefined}
+    />,
+  );
+}
+
 describe('UpdatePreview', () => {
   it('renders the review trigger, signed changes and semantic records', () => {
-    const html = renderToStaticMarkup(
-      <UpdatePreview
-        foreign={foreign}
-        converter={converter}
-        nbp={nbp}
-        updateState="idle"
-        onRequestUpdate={() => undefined}
-      />,
-    );
+    const html = render(true);
     expect(html).toContain('Review update');
     expect(html).not.toContain('>Update cashier<');
     expect(html).not.toContain('NBP target');
@@ -57,5 +62,28 @@ describe('UpdatePreview', () => {
     expect(html).toContain('class="records"');
     expect(html).toContain('Print currency converter after update');
     expect(html).toContain('US Dollar');
+    expect(html).not.toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+  });
+
+  it('disables the review trigger with a visible reason when the read is not fresh', () => {
+    const html = render(false);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+    expect(html).toContain('Cashier records are not current.');
+    expect(html).toContain('the values above are the last complete read');
+    expect(html).toContain('Last read');
+  });
+
+  it('keeps a disabled Review update when no plan exists after a failed first read', () => {
+    const html = renderToStaticMarkup(
+      <UpdatePreview
+        nbp={nbp}
+        readFresh={false}
+        updateState="idle"
+        onRequestUpdate={() => undefined}
+      />,
+    );
+    expect(html).toContain('Complete the foreign reads');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+    expect(html).toContain('Cashier records are not current.');
   });
 });

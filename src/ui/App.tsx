@@ -84,20 +84,20 @@ function lockMessage(state: SessionSnapshot['lockState']): string {
 }
 
 function readErrorMessage(snapshot: SessionSnapshot): string | null {
-  if (snapshot.phase === 'error') {
-    return snapshot.error?.message ?? 'The cashier could not be reached.';
-  }
   if (snapshot.captureState === 'failed' || snapshot.captureState === 'captureOnly') {
-    return 'The cashier did not confirm the connection check. Check the cable and port, then retry.';
+    return 'Connection check failed. Check the cable and retry.';
   }
   if (snapshot.readState === 'failed') {
-    return 'The cashier did not return the local bootstrap records. Retry the read.';
+    return 'The local records did not arrive. Retry the read.';
   }
   if (snapshot.foreignReadState === 'failed') {
-    return 'The cashier did not return the USD/EUR records. Retry the read.';
+    return 'The USD/EUR records did not arrive. Retry the read.';
+  }
+  if (snapshot.foreignReadState === 'read' && snapshot.converterReadState === 'failed') {
+    return 'Read incomplete; no update possible. The converter record did not arrive.';
   }
   if (snapshot.converterReadState === 'failed') {
-    return 'The cashier did not return the converter record. Retry the read.';
+    return 'The converter record did not arrive. Retry the read.';
   }
   return null;
 }
@@ -118,6 +118,8 @@ function consoleState(snapshot: SessionSnapshot): string {
   if (snapshot.updateState !== 'idle') return snapshot.updateState;
   if (snapshot.writeTestState !== 'idle') return snapshot.writeTestState;
   if (
+    snapshot.captureState === 'failed' ||
+    snapshot.captureState === 'captureOnly' ||
     snapshot.readState === 'failed' ||
     snapshot.foreignReadState === 'failed' ||
     snapshot.converterReadState === 'failed'
@@ -125,6 +127,7 @@ function consoleState(snapshot: SessionSnapshot): string {
     return 'failed';
   }
   if (
+    snapshot.captureState === 'capturing' ||
     snapshot.readState === 'reading' ||
     snapshot.foreignReadState === 'reading' ||
     snapshot.converterReadState === 'reading'
@@ -148,6 +151,7 @@ export function App({ session }: AppProps) {
   const [updateOpen, setUpdateOpen] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<UpdateTargets | null>(null);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
+  const [idleAcknowledged, setIdleAcknowledged] = useState(false);
 
   useEffect(() => {
     void session.acquireLock();
@@ -171,10 +175,34 @@ export function App({ session }: AppProps) {
     snapshot.phase !== 'connecting' &&
     snapshot.phase !== 'connected';
 
+  const readComplete =
+    snapshot.phase === 'connected' &&
+    snapshot.readState === 'read' &&
+    snapshot.foreignReadState === 'read' &&
+    snapshot.converterReadState === 'read' &&
+    snapshot.foreignRead !== undefined &&
+    snapshot.converterRead !== undefined;
+  const readFresh = readComplete;
+  const refreshing =
+    snapshot.captureState === 'capturing' ||
+    snapshot.readState === 'reading' ||
+    snapshot.foreignReadState === 'reading' ||
+    snapshot.converterReadState === 'reading';
+  const partialForeign =
+    snapshot.foreignReadState === 'read' && snapshot.converterReadState === 'failed'
+      ? snapshot.foreignRead
+      : undefined;
+  const displayedForeign = readFresh
+    ? snapshot.foreignRead
+    : (snapshot.lastRead?.foreignRead ?? partialForeign);
+  const displayedConverter = readFresh ? snapshot.converterRead : snapshot.lastRead?.converterRead;
+  const readIncomplete =
+    snapshot.foreignReadState === 'read' && snapshot.converterReadState === 'failed';
+
   const entries = useMemo(() => displayEntries(snapshot.capture, 250), [snapshot.capture]);
   const cashierRates = useMemo(() => {
     const rates: Partial<Record<CurrencyCode, string>> = {};
-    const read = snapshot.foreignRead;
+    const read = displayedForeign;
     if (read?.slot0Name === 'USD' || read?.slot0Name === 'EUR') {
       if (read.slot0Rate) rates[read.slot0Name] = read.slot0Rate;
     }
@@ -182,15 +210,19 @@ export function App({ session }: AppProps) {
       if (read.slot1Rate) rates[read.slot1Name] = read.slot1Rate;
     }
     return rates;
-  }, [snapshot.foreignRead]);
+  }, [displayedForeign]);
   const deviceBusy =
     snapshot.captureState === 'capturing' ||
     snapshot.readState === 'reading' ||
     snapshot.foreignReadState === 'reading' ||
     snapshot.converterReadState === 'reading' ||
     snapshot.writeTestState === 'writing';
+  const readBusy = deviceBusy || snapshot.updateState === 'updating';
 
-  const readError = readErrorMessage(snapshot);
+  const readError = snapshot.phase === 'connected' ? readErrorMessage(snapshot) : null;
+  const readFailed = readError !== null;
+  const statusError = snapshot.error?.message ?? readError;
+  const statusIsReadFailure = snapshot.error === undefined && readFailed;
   const displayState = consoleState(snapshot);
 
   const clearCapture = () => {
@@ -203,25 +235,46 @@ export function App({ session }: AppProps) {
     setClearOpen(false);
   };
 
-  const runAutoReads = async () => {
+  const runReads = async (): Promise<void> => {
+    if (session.getSnapshot().phase !== 'connected') {
+      setIdleAcknowledged(false);
+      return;
+    }
     await session.runPreflight();
-    if (session.getSnapshot().captureState !== 'captured') return;
+    if (session.getSnapshot().captureState !== 'captured') {
+      setIdleAcknowledged(false);
+      return;
+    }
     await session.runReadForeign();
-    if (session.getSnapshot().foreignReadState !== 'read') return;
+    if (session.getSnapshot().foreignReadState !== 'read') {
+      setIdleAcknowledged(false);
+      return;
+    }
     await session.runReadConverter();
+    if (session.getSnapshot().converterReadState !== 'read') {
+      setIdleAcknowledged(false);
+    }
   };
 
   const connect = async (kind: TransportKind) => {
+    if (!idleAcknowledged || !canConnect || !supportsWebSerial()) return;
     await session.connect(kind);
-    if (session.getSnapshot().phase === 'connected') await runAutoReads();
+    if (session.getSnapshot().phase !== 'connected') {
+      setIdleAcknowledged(false);
+      return;
+    }
+    await runReads();
   };
 
-  const retryReads = () => {
-    if (session.getSnapshot().phase === 'connected') {
-      void runAutoReads();
-    } else {
-      void connect('webserial');
-    }
+  const readCashier = async () => {
+    if (!idleAcknowledged) return;
+    if (session.getSnapshot().phase !== 'connected' || readBusy) return;
+    await runReads();
+  };
+
+  const disconnect = async () => {
+    setIdleAcknowledged(false);
+    await session.disconnect();
   };
 
   const writeRates = {
@@ -232,6 +285,7 @@ export function App({ session }: AppProps) {
   } satisfies Record<WriteTarget, string | undefined>;
 
   const requestUpdate = (targets: UpdateTargets) => {
+    if (!readFresh) return;
     setPendingUpdate(targets);
     setUpdateOpen(true);
   };
@@ -332,6 +386,20 @@ export function App({ session }: AppProps) {
             </div>
 
             <div className="panel-body connection-body">
+              <div>
+                <label className="checkline idle-gate">
+                  <input
+                    type="checkbox"
+                    checked={idleAcknowledged}
+                    onChange={(event) => setIdleAcknowledged(event.target.checked)}
+                  />
+                  <span>Cashier is idle and no sale is open</span>
+                </label>
+                <p className="hint" id="idle-gate-hint">
+                  Connect and Read stay disabled until you confirm the cashier is idle.
+                </p>
+              </div>
+
               <div className="connection-grid">
                 <div>
                   <p className="label">Transport</p>
@@ -340,19 +408,31 @@ export function App({ session }: AppProps) {
                       type="button"
                       className="button primary"
                       onClick={() => void connect('webserial')}
-                      disabled={!canConnect || !supportsWebSerial()}
+                      aria-disabled={!canConnect || !idleAcknowledged || !supportsWebSerial()}
+                      aria-describedby="idle-gate-hint"
                       title={
                         supportsWebSerial()
                           ? 'Select the cashier with Web Serial'
                           : 'Web Serial is unavailable'
                       }
                     >
-                      Connect Web Serial
+                      Connect cashier
                     </button>
                     <button
                       type="button"
                       className="button"
-                      onClick={() => void session.disconnect()}
+                      onClick={() => void readCashier()}
+                      aria-disabled={
+                        !idleAcknowledged || snapshot.phase !== 'connected' || readBusy
+                      }
+                      aria-describedby="idle-gate-hint"
+                    >
+                      {readFailed ? 'Read again' : 'Read cashier'}
+                    </button>
+                    <button
+                      type="button"
+                      className="button"
+                      onClick={() => void disconnect()}
                       disabled={snapshot.phase === 'idle' || deviceBusy}
                     >
                       Disconnect
@@ -391,55 +471,50 @@ export function App({ session }: AppProps) {
               </div>
 
               <div
-                className={`status${snapshot.error ? ' status-error' : ''}`}
-                role={snapshot.error ? 'alert' : 'status'}
-                aria-live={snapshot.error ? 'assertive' : 'polite'}
+                className={`status${statusError ? ' status-error' : ''}`}
+                role={statusError ? 'alert' : 'status'}
+                aria-live={statusError ? 'assertive' : 'polite'}
               >
-                {snapshot.phase === 'connected'
-                  ? deviceBusy
-                    ? 'Connected · reading cashier…'
-                    : 'Connected.'
-                  : snapshot.error
-                    ? snapshot.error.message
-                    : lockMessage(snapshot.lockState)}
+                {statusError ? (
+                  <>
+                    {statusIsReadFailure ? (
+                      <strong className="status-title">
+                        {readIncomplete ? 'Read incomplete' : 'Could not read the cashier.'}
+                      </strong>
+                    ) : null}
+                    <span>{statusError}</span>
+                  </>
+                ) : snapshot.phase === 'connected' ? (
+                  deviceBusy ? (
+                    'Connected · reading cashier…'
+                  ) : readFresh ? (
+                    'Connected. Cashier records are current.'
+                  ) : (
+                    'Connected.'
+                  )
+                ) : (
+                  lockMessage(snapshot.lockState)
+                )}
               </div>
             </div>
           </section>
 
-          {readError ? (
-            <section
-              className="card panel read-error"
-              role="alert"
-              aria-labelledby="read-error-heading"
-            >
-              <div className="card-heading panel-head">
-                <div>
-                  <h2 id="read-error-heading">Could not read the cashier</h2>
-                  <p className="muted">{readError}</p>
-                </div>
-              </div>
-              <div className="panel-body">
-                <button
-                  type="button"
-                  className="button primary"
-                  onClick={retryReads}
-                  disabled={deviceBusy}
-                >
-                  Retry reading
-                </button>
-              </div>
-            </section>
-          ) : null}
-
           <div className="workspace">
-            <RateComparison nbp={nbp} cashier={cashierRates} />
+            <RateComparison
+              nbp={nbp}
+              cashier={cashierRates}
+              readFresh={readFresh}
+              refreshing={refreshing}
+              readAt={snapshot.lastRead?.at}
+            />
             <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
           </div>
 
           <UpdatePreview
-            foreign={snapshot.foreignRead}
-            converter={snapshot.converterRead}
+            foreign={displayedForeign}
+            converter={displayedConverter}
             nbp={nbp}
+            readFresh={readFresh}
             updateState={snapshot.updateState}
             updateResult={snapshot.updateResult}
             onRequestUpdate={requestUpdate}

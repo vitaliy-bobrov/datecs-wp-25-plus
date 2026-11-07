@@ -86,6 +86,12 @@ interface ForeignReadResult {
   rawFrames?: string[];
 }
 
+interface LastRead {
+  foreignRead: ForeignReadResult;
+  converterRead: ConverterReadResult;
+  at: string;
+}
+
 export interface SessionSnapshot {
   phase: SessionPhase;
   lockState: LockState;
@@ -102,6 +108,7 @@ export interface SessionSnapshot {
   preflight?: PreflightResult;
   foreignRead?: ForeignReadResult;
   converterRead?: ConverterReadResult;
+  lastRead?: LastRead;
   writeTest?: WriteTestResult;
   capture: readonly CaptureEntry[];
 }
@@ -220,6 +227,7 @@ export class DeviceSession {
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      lastRead: undefined,
       writeTest: undefined,
       error: undefined,
     });
@@ -323,6 +331,7 @@ export class DeviceSession {
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      lastRead: undefined,
       writeTest: undefined,
     });
   }
@@ -741,6 +750,12 @@ export class DeviceSession {
       }
     }
 
+    const foreignRead = this.snapshot.foreignRead;
+    if (!foreignRead) {
+      this.set({ converterReadState: 'failed' });
+      return;
+    }
+
     this.append({
       kind: 'info',
       transport: transportKind,
@@ -748,7 +763,19 @@ export class DeviceSession {
       detail: { ...converter, ...environment } as Record<string, unknown>,
     });
     this.writeDelimiter = 0x32;
-    this.set({ converterReadState: 'read', converterRead: converter });
+    this.set({
+      converterReadState: 'read',
+      converterRead: converter,
+      lastRead: {
+        foreignRead,
+        converterRead: converter,
+        at: this.captureTimestamp(),
+      },
+    });
+  }
+
+  private captureTimestamp(): string {
+    return this.snapshot.capture.at(-1)?.ts ?? '';
   }
 
   private async readFrameSequence(
@@ -1297,13 +1324,19 @@ export class DeviceSession {
       else updatedForeign.slot1Rate = values.usd;
       if (eurSlot === 0) updatedForeign.slot0Rate = values.eur;
       else updatedForeign.slot1Rate = values.eur;
+      const updatedConverter = {
+        ...converter,
+        rate: values.converter,
+        printFlag: values.printFlag,
+      };
       this.set({
         updateState: 'verified',
         foreignRead: updatedForeign,
-        converterRead: {
-          ...converter,
-          rate: values.converter,
-          printFlag: values.printFlag,
+        converterRead: updatedConverter,
+        lastRead: {
+          foreignRead: updatedForeign,
+          converterRead: updatedConverter,
+          at: this.captureTimestamp(),
         },
         updateResult: { backups, targets, readbacks, restored: true },
       });
@@ -1381,6 +1414,7 @@ export class DeviceSession {
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,
+      lastRead: undefined,
       writeTest: undefined,
     };
     this.emit();
