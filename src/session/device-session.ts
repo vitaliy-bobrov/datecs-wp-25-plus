@@ -13,17 +13,17 @@ import {
 } from '../ports/transport';
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
 
-export type SessionPhase = 'idle' | 'connecting' | 'connected' | 'error';
-export type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable';
-export type CaptureState = 'idle' | 'capturing' | 'captured' | 'captureOnly' | 'failed';
+type SessionPhase = 'idle' | 'connecting' | 'connected' | 'error';
+type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable';
+type CaptureState = 'idle' | 'capturing' | 'captured' | 'captureOnly' | 'failed';
 
-export interface SessionError {
+interface SessionError {
   code: TransportErrorCode | 'unknown';
   message: string;
   detail?: TransportErrorDetail;
 }
 
-export interface PreflightResult {
+interface PreflightResult {
   status: 'captured' | 'captureOnly' | 'failed';
   mode?: 'short' | 'long' | 'type2';
   statusHex?: string;

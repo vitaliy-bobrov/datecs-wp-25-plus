@@ -56,13 +56,14 @@ No Docker USB passthrough is used. The DSH/container environment is for building
 ```bash
 npm run typecheck   # tsc --noEmit
 npm run lint        # Biome lint + format check
+npm run knip        # unused files, exports, types and dependencies
 npm run dupes       # jscpd duplication threshold
 npm test            # Vitest
 npm run build       # typecheck + Vite production build
 npm run check       # all of the above except build
 ```
 
-GitHub Actions runs on pushes to `main` and on pull requests; deployment is `main`-only. It runs `npm ci`, typecheck, Biome, jscpd, tests and build. The duplication threshold is 3%; tests and generated files are excluded.
+GitHub Actions runs on pushes to `main` and on pull requests; deployment is `main`-only. It runs `npm ci`, typecheck, Biome, Knip, jscpd, tests and build. The duplication threshold is 3%; tests and generated files are excluded.
 
 ## Architecture and terms
 
@@ -85,3 +86,7 @@ The read/write epic remains gated on a real currency-read capture plus a non-pro
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Boundary validation
+
+Knip is the boundary gate: `knip.json` declares the app entry points, and CI fails on unused files, exports, exported types or dependencies. Remove dead modules rather than suppressing them.

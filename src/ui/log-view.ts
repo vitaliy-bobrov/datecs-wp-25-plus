@@ -1,5 +1,4 @@
 import type { CaptureEntry } from '../domain/capture-log';
-import type { CaptureState } from '../session/device-session';
 
 export function displayEntries(entries: readonly CaptureEntry[], limit = 250): CaptureEntry[] {
   return [...entries].reverse().slice(0, limit);
@@ -40,8 +39,4 @@ export function formatTimestamp(iso: string): string {
     second: '2-digit',
     timeZoneName: 'short',
   });
-}
-
-export function captureStateLabel(state: CaptureState): string {
-  return stateLabel(state);
 }

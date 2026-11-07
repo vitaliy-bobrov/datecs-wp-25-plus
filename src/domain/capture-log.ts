@@ -1,7 +1,7 @@
 import type { Clock } from '../ports/clock';
 import type { TransportKind } from '../ports/transport';
 
-export type CaptureKind = 'session' | 'connect' | 'disconnect' | 'info' | 'error' | 'tx' | 'rx';
+type CaptureKind = 'session' | 'connect' | 'disconnect' | 'info' | 'error' | 'tx' | 'rx';
 
 export interface CaptureEntry {
   id: number;

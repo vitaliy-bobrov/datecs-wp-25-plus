@@ -15,7 +15,8 @@
     "lint": "biome check src vite.config.ts vitest.config.ts tsconfig.json package.json index.html",
     "format": "biome format --write src vite.config.ts vitest.config.ts tsconfig.json package.json index.html",
     "dupes": "jscpd src --config .jscpd.json",
-    "check": "npm run typecheck && npm run lint && npm run dupes && npm test"
+    "check": "npm run typecheck && npm run lint && npm run knip && npm run dupes && npm test",
+    "knip": "knip --no-progress"
   },
   "dependencies": {
     "react": "19.3.1",
@@ -27,6 +28,7 @@
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
     "jscpd": "^5.4.2",
+    "knip": "^6.44.2",
     "typescript": "7.0.2",
     "vite": "8.3.5",
     "vitest": "5.0.5"

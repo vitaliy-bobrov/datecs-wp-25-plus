@@ -1,4 +1,4 @@
-export interface NbpRate {
+interface NbpRate {
   code: 'USD' | 'EUR';
   currency: string;
   mid: string;

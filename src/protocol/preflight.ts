@@ -4,10 +4,7 @@ export const PREFLIGHT_FRAME = Uint8Array.from([
   0x01, 0x30, 0x30, 0x32, 0x3a, 0x20, 0x30, 0x30, 0x34, 0x3a, 0x05, 0x30, 0x31, 0x3b, 0x3f, 0x03,
 ]);
 
-export const PREFLIGHT_SEQUENCE = 0x30;
-export const PREFLIGHT_COMMAND = 0x32;
-
-export type FrameMode = 'short' | 'long' | 'type2';
+type FrameMode = 'short' | 'long' | 'type2';
 
 export interface ParsedFrame {
   mode: FrameMode;
@@ -21,7 +18,7 @@ export interface ParsedFrame {
   rawHex: string;
 }
 
-export interface ParseAttempt {
+interface ParseAttempt {
   mode: FrameMode;
   accepted: boolean;
   reason?: string;
@@ -36,7 +33,7 @@ export function toAsciiNibble(value: number): number {
   return 0x30 + (value & 0x0f);
 }
 
-export function decodeNibbles(bytes: Uint8Array, start: number, count: number): number | null {
+function decodeNibbles(bytes: Uint8Array, start: number, count: number): number | null {
   let value = 0;
   for (let index = 0; index < count; index += 1) {
     const byte = bytes[start + index];
@@ -52,7 +49,7 @@ export function sumFromStxToEnq(bytes: Uint8Array, enqIndex: number): number {
   return sum & 0xffff;
 }
 
-export function bccMatches(bytes: Uint8Array, start: number, expected: number): boolean {
+function bccMatches(bytes: Uint8Array, start: number, expected: number): boolean {
   if (start + 4 > bytes.length) return false;
   const decoded = decodeNibbles(bytes, start, 4);
   return decoded !== null && decoded === expected;
@@ -151,7 +148,7 @@ export function parseShort(bytes: Uint8Array): ParsedFrame | null {
   return null;
 }
 
-export function parseType2(input: Uint8Array): ParsedFrame | null {
+function parseType2(input: Uint8Array): ParsedFrame | null {
   let frame = input;
   let preamble = new Uint8Array();
   let offset = 0;
