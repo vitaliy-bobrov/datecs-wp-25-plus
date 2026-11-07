@@ -36,10 +36,10 @@ export function RateComparison({ nbp, cashier }: RateComparisonProps) {
         <table className="comparison-table">
           <thead>
             <tr>
-              <th scope="col">Code</th>
-              <th scope="col">Cashier</th>
-              <th scope="col">NBP mid</th>
-              <th scope="col">Difference</th>
+              <th scope="col">Currency</th>
+              <th scope="col">Cashier rate</th>
+              <th scope="col">NBP reference</th>
+              <th scope="col">Difference vs NBP</th>
             </tr>
           </thead>
           <tbody>

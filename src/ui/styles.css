@@ -525,8 +525,8 @@ h2 {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--panel);
-  color: var(--text);
+  background: var(--surface);
+  color: var(--ink);
   box-shadow: 0 24px 70px rgb(0 0 0 / 35%);
 }
 .modal::backdrop {
@@ -534,6 +534,7 @@ h2 {
 }
 .modal-panel {
   padding: 22px;
+  background: var(--surface);
 }
 .modal-panel h2 {
   margin: 0 0 12px;
@@ -548,7 +549,7 @@ h2 {
   margin: 0 0 10px;
 }
 .modal-body code {
-  color: var(--text);
+  color: var(--ink);
 }
 .modal-actions {
   display: flex;

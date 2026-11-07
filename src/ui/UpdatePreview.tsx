@@ -62,9 +62,9 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
           <table className="comparison-table plan-table">
             <thead>
               <tr>
-                <th scope="col">Field</th>
-                <th scope="col">Current</th>
-                <th scope="col">Target</th>
+                <th scope="col">Record</th>
+                <th scope="col">Cashier now</th>
+                <th scope="col">NBP target</th>
               </tr>
             </thead>
             <tbody>
