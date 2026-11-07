@@ -525,3 +525,41 @@ h2 {
   margin: 8px 0 0;
   font-size: 0.7rem;
 }
+
+.modal {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 24px 70px rgb(0 0 0 / 35%);
+}
+.modal::backdrop {
+  background: rgb(10 12 16 / 65%);
+}
+.modal-panel {
+  padding: 22px;
+}
+.modal-panel h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+.modal-body {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.55;
+}
+.modal-body p {
+  margin: 0 0 10px;
+}
+.modal-body code {
+  color: var(--text);
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}

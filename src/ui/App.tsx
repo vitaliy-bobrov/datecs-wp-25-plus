@@ -6,6 +6,7 @@ import { errorMessage } from '../domain/nbp';
 import { type CurrencyCode, formatFlag, formatRateValue, parseRawRate } from '../domain/rates';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
+import { ConfirmDialog } from './ConfirmDialog';
 import { captureDownload, downloadText } from './download';
 import { displayEntries, formatTimestamp, formatUsbIds, stateClass, stateLabel } from './log-view';
 import { NbpPanel, type NbpState } from './NbpPanel';
@@ -62,6 +63,8 @@ export function App({ session }: AppProps) {
     session.getSnapshot,
   );
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const [clearOpen, setClearOpen] = useState(false);
+  const [writeOpen, setWriteOpen] = useState(false);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
 
   useEffect(() => {
@@ -108,30 +111,32 @@ export function App({ session }: AppProps) {
   const canPreflight = snapshot.phase === 'connected' && !deviceBusy;
 
   const clearCapture = () => {
-    if (deviceBusy) return;
-    if (window.confirm('Clear the device log and preflight result?')) {
-      session.clearCapture();
-      setCopyState('idle');
-    }
+    if (!deviceBusy) setClearOpen(true);
+  };
+
+  const confirmClear = () => {
+    session.clearCapture();
+    setCopyState('idle');
+    setClearOpen(false);
   };
 
   const connect = (kind: TransportKind) => {
     void session.connect(kind);
   };
 
+  const writeOriginal = snapshot.foreignRead?.slot0FullName;
+  const writeTemporary = writeOriginal
+    ? `${writeOriginal[0] === 'X' ? 'Y' : 'X'}${writeOriginal.slice(1)}`
+    : '';
+
   const runWriteTest = () => {
-    const original = snapshot.foreignRead?.slot0FullName;
-    if (!original) return;
-    const approved = window.confirm(
-      `One-field production write test.\n\n` +
-        `Field: slot 0 full name\n` +
-        `Current: ${original}\n` +
-        `Temporary: ${original[0] === 'X' ? 'Y' : 'X'}${original.slice(1)}\n\n` +
-        `It will read the current value again, write the temporary name, read it back, restore the original, ` +
-        `and read it back again. No rate, short name, flag or converter value is touched. ` +
-        `If restore fails, the cashier may keep the temporary name. Continue?`,
-    );
-    if (approved) void session.runFullNameWriteTest();
+    if (!writeOriginal) return;
+    setWriteOpen(true);
+  };
+
+  const confirmWriteTest = () => {
+    setWriteOpen(false);
+    void session.runFullNameWriteTest();
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -646,6 +651,54 @@ export function App({ session }: AppProps) {
           write, and no <code>0xFF</code>.
         </p>
       </footer>
+
+      <ConfirmDialog
+        open={clearOpen}
+        title="Clear the device log?"
+        confirmLabel="Clear"
+        onConfirm={confirmClear}
+        onCancel={() => setClearOpen(false)}
+      >
+        <p>
+          This removes the in-memory log and the preflight result. It does not send anything to the
+          cashier.
+        </p>
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={writeOpen}
+        title="Run one-field write test?"
+        confirmLabel="Run test"
+        onConfirm={confirmWriteTest}
+        onCancel={() => setWriteOpen(false)}
+      >
+        <p>
+          This sends two writes to the connected cashier and reads back after each. Use only when
+          the cashier is idle.
+        </p>
+        <dl className="read-values">
+          <div>
+            <dt>Field</dt>
+            <dd>slot 0 full name</dd>
+          </div>
+          <div>
+            <dt>Current</dt>
+            <dd>{writeOriginal}</dd>
+          </div>
+          <div>
+            <dt>Temporary</dt>
+            <dd>{writeTemporary}</dd>
+          </div>
+          <div>
+            <dt>Restore</dt>
+            <dd>{writeOriginal}</dd>
+          </div>
+        </dl>
+        <p>
+          No rate, short name, flag or converter value is touched. If restore fails, the cashier may
+          keep the temporary name; stop and report the log.
+        </p>
+      </ConfirmDialog>
     </main>
   );
 }
