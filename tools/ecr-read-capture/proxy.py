@@ -38,7 +38,19 @@ def main() -> int:
                         help="Wine prefix whose dosdevices/com1 should point at the PTY")
     args = parser.parse_args()
 
-    cashier = serial.Serial(args.device, args.baud, timeout=0, write_timeout=1)
+    try:
+        cashier = serial.Serial(
+            args.device,
+            args.baud,
+            timeout=0,
+            write_timeout=1,
+            exclusive=True,
+        )
+    except (OSError, serial.SerialException) as error:
+        sys.exit(f"Cannot open {args.device}: {error}. Close the browser/app using it and retry.")
+
+    cashier.dtr = True
+    cashier.rts = True
     master, slave = pty.openpty()
     tty.setraw(slave)
     pty_name = os.ttyname(slave)
@@ -79,11 +91,18 @@ def main() -> int:
             if master in ready:
                 data = os.read(master, 4096)
                 if data:
+                    print(f"ECR -> cashier: {len(data)} bytes", flush=True)
                     record("ecr-to-cashier", data)
                     cashier.write(data)
             if cashier.fileno() in ready:
-                data = cashier.read(4096)
+                try:
+                    data = cashier.read(4096)
+                except serial.SerialException as error:
+                    print(f"Cashier serial error: {error}", flush=True)
+                    log.write(json.dumps({"ts": now(), "kind": "serial-error", "message": str(error)}) + "\n")
+                    break
                 if data:
+                    print(f"Cashier -> ECR: {len(data)} bytes", flush=True)
                     record("cashier-to-ecr", data)
                     os.write(master, data)
     finally:

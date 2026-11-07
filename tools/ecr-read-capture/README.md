@@ -39,3 +39,37 @@ Use the real Wine prefix that contains the ECR Tool; adjust the path.
 - The only action on the cashier must be **Read currencies**. A Save would be forwarded and is a write.
 - If the ECR Tool cannot open COM1, check that the proxy is still running and that the Wine prefix path is correct.
 - Keep the cashier connected until the capture file is closed.
+
+## Troubleshooting
+
+### `Device not configured` on the cashier
+
+- Close Chrome and every other app holding the port.
+- Check the holder: `lsof /dev/cu.usbmodem1101`
+- Try the dial-in node instead of the callout node:
+
+```bash
+--device /dev/tty.usbmodem1101
+```
+
+- Re-run `ls /dev/cu.*` after the error; the device may have re-enumerated.
+- The proxy now asserts DTR and RTS and uses exclusive open.
+
+### ECR Tool cannot connect / log stays empty
+
+The proxy log is empty because ECR Tool is not reaching the PTY. Test Wine's COM1 mapping separately:
+
+```bash
+WINEPREFIX="/Users/bobrov1989/.wine-ecrtool" wine cmd /c "echo test > COM1"
+```
+
+While the proxy is running, this should print `ECR -> cashier: ...` and add an `ecr-to-cashier` entry to the JSONL.
+
+If it does not:
+
+1. Confirm the symlink while the proxy runs:
+   `ls -l "$WINEPREFIX/dosdevices/com1"`
+2. Start the ECR Tool **after** the proxy; restart Wine/ECR Tool after changing COM1.
+3. In `winecfg`, confirm COM1 is the expected port.
+4. Check the ECR Tool's saved port setting; it must use COM1 at 9600.
+5. If the ECR Tool still cannot open COM1, it may be running on a different Wine/CrossOver/Whisky prefix; use that prefix.
