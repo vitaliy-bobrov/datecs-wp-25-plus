@@ -65,7 +65,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 - `src/adapters` — Web Serial and NBP HTTP adapters; the simulator adapter is retained for tests only
 - `src/domain` — capture log, NBP selection/staleness, rate normalization and update preview
 - `src/ports` — transport, clock, lock and error contracts
-- `src/protocol` — preflight, local/foreign/converter reads and the single-field write frames (the full-name test remains in unit tests only)
+- `src/protocol` — preflight, local/foreign/converter reads and the single-field write frames used by the rate and print-flag tests
 - `src/session` — connection, lock, read sequences, comparison state and the guarded write test
 - `src/ui` — one-page operator UI
 

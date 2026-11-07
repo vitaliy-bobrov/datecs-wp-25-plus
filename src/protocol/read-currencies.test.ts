@@ -133,33 +133,6 @@ describe('converter read', () => {
   });
 });
 
-describe('single-field full-name write test', () => {
-  it('writes the same CP1250 full name with no 0xFF and a valid BCC', async () => {
-    const { buildFullNameWrite, buildFullNameReadback } = await import('./read-currencies');
-    const write = buildFullNameWrite('dolar amerykański');
-    expect(write).not.toBeNull();
-    const frame = write as Uint8Array;
-    expect(frame.includes(0xff)).toBe(false);
-    expect(frame.includes(0xf1)).toBe(true);
-    const enq = frame.length - 6;
-    expect(bccMatches(frame, enq + 1, sumFromStxToEnq(frame, enq))).toBe(true);
-    const readback = buildFullNameReadback();
-    expect(readback.includes(0xff)).toBe(false);
-  });
-
-  it('matches the expected full-name write frame', async () => {
-    const { buildFullNameWrite } = await import('./read-currencies');
-    expect(toHex(buildFullNameWrite('dolar amerykański') as Uint8Array)).toBe(
-      '01303035323230303f3f4375727246756c6c4e616d65466f726569676e093009646f6c617220616d6572796b61f1736b69090531303f3503',
-    );
-  });
-
-  it('rejects unsupported characters', async () => {
-    const { buildFullNameWrite } = await import('./read-currencies');
-    expect(buildFullNameWrite('dolar €')).toBeNull();
-  });
-});
-
 describe('single-rate write test', () => {
   it('builds a rate write and readback without 0xFF', () => {
     const write = buildRateWrite('39252');

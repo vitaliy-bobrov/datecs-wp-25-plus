@@ -370,53 +370,6 @@ describe('DeviceSession', () => {
     expect(session.getSnapshot().preflight?.mode).toBe('type2');
   });
 
-  it('runs the local, foreign, converter and one-field write-test flow', async () => {
-    const selector = new FakeSelector();
-    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
-    await session.acquireLock();
-    await session.connect();
-    const transport = selector.last;
-    if (!transport) throw new Error('Fake transport was not created.');
-
-    queueReadFlow(transport);
-    await runReadFlow(session);
-
-    expect(session.getSnapshot().foreignRead).toMatchObject({
-      slot0Name: 'USD',
-      slot0Rate: '39251',
-      slot1Name: 'EUR',
-      slot1Rate: '43955',
-      slot0FullName: 'US Dollar',
-      slot0ChangeAfterZ: '1',
-      slot1FullName: 'Euro',
-      slot1ChangeAfterZ: '0',
-    });
-    expect(session.getSnapshot().converterRead).toMatchObject({
-      name: 'Konwerter',
-      rate: '39251',
-      printFlag: '1',
-    });
-
-    transport.rx.push(
-      type2Response('US Dollar', '2'),
-      type2Response('', '3'),
-      type2Response('XS Dollar', '4'),
-      type2Response('', '5'),
-      type2Response('US Dollar', '6'),
-    );
-    await session.runFullNameWriteTest();
-    expect(session.getSnapshot().writeTestState).toBe('verified');
-    expect(session.getSnapshot().writeTest).toMatchObject({
-      original: 'US Dollar',
-      temporary: 'XS Dollar',
-      temporaryReadback: 'XS Dollar',
-      restoredReadback: 'US Dollar',
-      restored: true,
-    });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 5);
-    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
-  });
-
   it('runs the local bootstrap automatically when foreign read is first', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
@@ -692,37 +645,6 @@ describe('DeviceSession', () => {
     ).toBe(true);
   });
 
-  it('restores the original full name after a temporary readback mismatch', async () => {
-    const selector = new FakeSelector();
-    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
-    await session.acquireLock();
-    await session.connect();
-    const transport = selector.last;
-    if (!transport) throw new Error('Fake transport was not created.');
-    queueReadFlow(transport);
-    await runReadFlow(session);
-
-    transport.rx.push(
-      type2Response('US Dollar', '2'),
-      type2Response('', '3'),
-      type2Response('XS Dollar!', '4'),
-      type2Response('', '5'),
-      type2Response('US Dollar', '6'),
-    );
-    await session.runFullNameWriteTest();
-
-    expect(session.getSnapshot().writeTestState).toBe('failed');
-    expect(session.getSnapshot().writeTest).toMatchObject({
-      original: 'US Dollar',
-      temporary: 'XS Dollar',
-      temporaryReadback: 'XS Dollar!',
-      restoredReadback: 'US Dollar',
-      restored: true,
-    });
-    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 5);
-    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
-  });
-
   it('rejects a response whose delimiter does not match the request', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
@@ -741,27 +663,6 @@ describe('DeviceSession', () => {
         .getSnapshot()
         .capture.some((entry) => entry.kind === 'error' && entry.code === 'protocol-error'),
     ).toBe(true);
-  });
-
-  it('reports an unrecovered full-name write when restore gets no response', async () => {
-    const selector = new FakeSelector();
-    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
-    await session.acquireLock();
-    await session.connect();
-    const transport = selector.last;
-    if (!transport) throw new Error('Fake transport was not created.');
-    queueReadFlow(transport);
-    await runReadFlow(session);
-
-    transport.rx.push(
-      type2Response('US Dollar', '2'),
-      type2Response('', '3'),
-      type2Response('XS Dollar!', '4'),
-    );
-    await session.runFullNameWriteTest();
-
-    expect(session.getSnapshot().writeTestState).toBe('failed');
-    expect(session.getSnapshot().writeTest?.restored).toBe(false);
   });
 
   it('clears foreign, converter and write-test state before a new preflight', async () => {

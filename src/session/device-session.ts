@@ -17,8 +17,6 @@ import type { ReadResponse } from '../protocol/read-currencies';
 import {
   buildConverterRateReadback,
   buildConverterRateWrite,
-  buildFullNameReadback,
-  buildFullNameWrite,
   buildPrintFlagReadback,
   buildPrintFlagWrite,
   buildRateReadback,
@@ -892,19 +890,6 @@ export class DeviceSession {
     return raw;
   }
 
-  async runFullNameWriteTest(): Promise<void> {
-    const original = this.snapshot.foreignRead?.slot0FullName;
-    if (!original) return;
-    const first = original[0] === 'X' ? 'Y' : 'X';
-    await this.executeWriteTest(
-      'slot0FullName',
-      original,
-      `${first}${original.slice(1)}`,
-      buildFullNameWrite,
-      buildFullNameReadback,
-    );
-  }
-
   async runRateWriteTest(slot: 0 | 1 = 0): Promise<void> {
     const original =
       slot === 0 ? this.snapshot.foreignRead?.slot0Rate : this.snapshot.foreignRead?.slot1Rate;
@@ -947,7 +932,7 @@ export class DeviceSession {
   }
 
   private async executeWriteTest(
-    field: 'slot0FullName' | 'slot0Rate' | 'slot1Rate' | 'converterRate' | 'converterPrint',
+    field: 'slot0Rate' | 'slot1Rate' | 'converterRate' | 'converterPrint',
     original: string,
     temporary: string,
     buildWrite: (value: string, delimiter: number) => Uint8Array | null,

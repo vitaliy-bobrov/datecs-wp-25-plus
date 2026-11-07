@@ -43,7 +43,6 @@ function writeFieldLabel(field: string): string {
   if (field === 'slot1Rate') return 'EUR slot 1 rate';
   if (field === 'converterRate') return 'converter rate';
   if (field === 'converterPrint') return 'print converter flag';
-  if (field === 'slot0FullName') return 'slot 0 full name';
   return field;
 }
 
