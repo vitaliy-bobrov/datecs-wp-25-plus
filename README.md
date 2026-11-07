@@ -31,7 +31,7 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 Hardware:
 
 1. Choose **Connect Web Serial** and select the cashier. The preflight, foreign reads and converter read run automatically.
-2. Use the read buttons only for a retry.
+2. If the automatic reads fail, use the **Retry reading** action.
 3. Download the JSONL and/or text log.
 4. Confirm the read records. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No rate write is sent; the one-field full-name test is separate and requires explicit confirmation.
 

@@ -56,7 +56,7 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
       {nbp.status !== 'ready' ? (
         <p className="empty">NBP reference is not ready.</p>
       ) : !plan ? (
-        <p className="empty">Complete the local, foreign and converter reads to build a preview.</p>
+        <p className="empty">Complete the foreign reads and NBP reference to build a preview.</p>
       ) : (
         <>
           <table className="comparison-table plan-table">
