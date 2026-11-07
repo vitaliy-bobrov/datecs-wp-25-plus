@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — currency reader
 
-Vite/React/TypeScript app with connection diagnostics, the known short preflight, local/foreign/converter reads, an NBP comparison and update preview. It sends no `0xFF`; the only writes are explicit USD, EUR, converter rate and print-flag diagnostic tests with readback and restore.
+Vite/React/TypeScript app with connection diagnostics, the known short preflight, local/foreign/converter reads, an NBP comparison and a confirmed full update with backup, readback and restore. It sends no `0xFF`.
 
 ## Develop
 
@@ -33,7 +33,7 @@ Hardware:
 1. Choose **Connect Web Serial** and select the cashier. The preflight, foreign reads and converter read run automatically.
 2. If the automatic reads fail, use the **Retry reading** action.
 3. Download the JSONL and/or text log.
-4. Confirm the read records. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No full update is sent; the single-field tests are separate and require explicit confirmation.
+4. Confirm the read records. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No update or single-field write is automatic; both require explicit confirmation.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -73,9 +73,9 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 ## Current scope
 
-Web Serial for hardware. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the only writes are explicit USD, EUR, converter rate and print-flag tests with readback and restore. The connection reuses the last granted port when available; otherwise it opens the browser picker.
+Web Serial for hardware. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the confirmed full update writes USD, EUR, converter rate and print flag, reads all four back and restores on failure. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
-An update preview shows the exact four-decimal targets from NBP against the read records. The only device writes are the explicitly confirmed USD/EUR/converter rate +1/restore and print-flag toggle tests; full multi-field update is not implemented.
+The update preview shows the exact four-decimal targets from NBP and exposes **Update cashier** only when there is a difference. The update backs up the four readable fields, prechecks them, writes all four, reads them back and restores on failure.
 
 
 ## Boundary validation

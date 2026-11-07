@@ -148,3 +148,25 @@ export function buildUpdatePlan(input: UpdatePlanInput): UpdatePlan | null {
 
   return { hasChanges, usd, eur, converter: converterPlan, warnings };
 }
+
+export interface UpdateTargets {
+  usdRaw: number;
+  eurRaw: number;
+  converterRaw: number;
+  printFlag: '0' | '1';
+}
+
+export interface UpdateValues {
+  usd: string;
+  eur: string;
+  converter: string;
+  printFlag: string;
+}
+
+export interface FullUpdateResult {
+  backups: UpdateValues;
+  targets: UpdateTargets;
+  readbacks?: UpdateValues;
+  restored: boolean;
+  message?: string;
+}

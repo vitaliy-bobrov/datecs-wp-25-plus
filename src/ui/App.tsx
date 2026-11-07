@@ -4,6 +4,7 @@ import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
 import { errorMessage } from '../domain/nbp';
 import { type CurrencyCode, formatFlag, formatRateValue, parseRawRate } from '../domain/rates';
+import type { UpdateTargets } from '../domain/update-plan';
 import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -118,6 +119,8 @@ export function App({ session }: AppProps) {
   const [clearOpen, setClearOpen] = useState(false);
   const [writeOpen, setWriteOpen] = useState(false);
   const [writeTarget, setWriteTarget] = useState<WriteTarget | null>(null);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<UpdateTargets | null>(null);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
 
   useEffect(() => {
@@ -201,6 +204,18 @@ export function App({ session }: AppProps) {
     print: snapshot.converterRead?.printFlag,
   } satisfies Record<WriteTarget, string | undefined>;
 
+  const requestUpdate = (targets: UpdateTargets) => {
+    setPendingUpdate(targets);
+    setUpdateOpen(true);
+  };
+
+  const confirmUpdate = () => {
+    const targets = pendingUpdate;
+    setUpdateOpen(false);
+    setPendingUpdate(null);
+    if (targets) void session.runFullUpdate(targets);
+  };
+
   const writeOriginal = writeTarget ? writeRates[writeTarget] : undefined;
   const writeTemporary = writeOriginal
     ? writeTarget === 'print'
@@ -249,8 +264,7 @@ export function App({ session }: AppProps) {
           <h1>Currency reader</h1>
           <p className="lede">
             Web Serial connection with automatic preflight, foreign-slot and converter reads, NBP
-            comparison and single-field write tests. No <code>0xFF</code>; no full update or
-            multi-field write.
+            comparison and a confirmed full update. No <code>0xFF</code>.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -355,7 +369,14 @@ export function App({ session }: AppProps) {
 
       <RateComparison nbp={nbp} cashier={cashierRates} />
 
-      <UpdatePreview foreign={snapshot.foreignRead} converter={snapshot.converterRead} nbp={nbp} />
+      <UpdatePreview
+        foreign={snapshot.foreignRead}
+        converter={snapshot.converterRead}
+        nbp={nbp}
+        updateState={snapshot.updateState}
+        updateResult={snapshot.updateResult}
+        onRequestUpdate={requestUpdate}
+      />
 
       {snapshot.converterRead ? (
         <section className="card write-test-card" aria-labelledby="write-test-heading">
@@ -554,10 +575,57 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Read-only records plus explicit USD/EUR/converter rate and print-flag tests. No full or
-          multi-field update, and no <code>0xFF</code>.
+          Read-only records plus a confirmed full update with backup, readback and restore. No
+          <code>0xFF</code>.
         </p>
       </footer>
+
+      <ConfirmDialog
+        open={updateOpen}
+        title="Apply NBP update?"
+        confirmLabel="Update cashier"
+        onConfirm={confirmUpdate}
+        onCancel={() => {
+          setUpdateOpen(false);
+          setPendingUpdate(null);
+        }}
+      >
+        <p>
+          This writes USD, EUR, converter rate and the print flag. The current values are backed up
+          in memory; the app reads all four back and restores them if verification fails.
+        </p>
+        <dl className="read-values">
+          <div>
+            <dt>USD rate</dt>
+            <dd>
+              {formatTestRate(snapshot.foreignRead?.slot0Rate)} →{' '}
+              {pendingUpdate ? formatTestRate(String(pendingUpdate.usdRaw)) : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>EUR rate</dt>
+            <dd>
+              {formatTestRate(snapshot.foreignRead?.slot1Rate)} →{' '}
+              {pendingUpdate ? formatTestRate(String(pendingUpdate.eurRaw)) : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>Converter rate</dt>
+            <dd>
+              {formatTestRate(snapshot.converterRead?.rate)} →{' '}
+              {pendingUpdate ? formatTestRate(String(pendingUpdate.converterRaw)) : '—'}
+            </dd>
+          </div>
+          <div>
+            <dt>Print converter</dt>
+            <dd>
+              {formatFlag(snapshot.converterRead?.printFlag)} →{' '}
+              {pendingUpdate ? formatFlag(pendingUpdate.printFlag) : '—'}
+            </dd>
+          </div>
+        </dl>
+        <p>Do not run this during a sale. The device is checked again before the first write.</p>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={clearOpen}

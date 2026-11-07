@@ -5,6 +5,8 @@ import {
   buildUpdatePlan,
   type ConverterSnapshot,
   type ForeignRecordSnapshot,
+  type FullUpdateResult,
+  type UpdateTargets,
 } from '../domain/update-plan';
 import type { NbpState } from './NbpPanel';
 
@@ -17,9 +19,19 @@ interface UpdatePreviewProps {
   foreign?: ForeignRecordSnapshot;
   converter?: ConverterSnapshot;
   nbp: NbpState;
+  updateState: 'idle' | 'updating' | 'verified' | 'failed';
+  updateResult?: FullUpdateResult;
+  onRequestUpdate: (targets: UpdateTargets) => void;
 }
 
-export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
+export function UpdatePreview({
+  foreign,
+  converter,
+  nbp,
+  updateState,
+  updateResult,
+  onRequestUpdate,
+}: UpdatePreviewProps) {
   const [printConverter, setPrintConverter] = useState(true);
   const nbpRates = useMemo(() => {
     if (nbp.status !== 'ready') return {};
@@ -47,8 +59,8 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
         <div>
           <h2 id="update-preview-heading">Update preview</h2>
           <p className="muted">
-            Target values from the NBP reference. Preview only; the write command has not been
-            captured and no device write is possible here.
+            Target values from the NBP reference. Update writes USD, EUR, converter and print flag,
+            verifies all four readbacks, and restores the backup if anything fails.
           </p>
         </div>
       </div>
@@ -155,8 +167,46 @@ export function UpdatePreview({ foreign, converter, nbp }: UpdatePreviewProps) {
             {plan.usd.percent === null || plan.eur.percent === null
               ? 'Difference unavailable for a missing current rate.'
               : `USD ${formatPercent(plan.usd.percent)} · EUR ${formatPercent(plan.eur.percent)} vs NBP.`}{' '}
-            This preview does not send or queue any write.
+            No write occurs until you confirm Update cashier.
           </p>
+
+          <div className="button-row">
+            <button
+              type="button"
+              className="button primary"
+              disabled={
+                !plan.hasChanges ||
+                !plan.converter ||
+                updateState === 'updating' ||
+                (updateState === 'failed' && updateResult?.restored === false) ||
+                !onRequestUpdate
+              }
+              onClick={() => {
+                if (!plan.converter) return;
+                onRequestUpdate({
+                  usdRaw: plan.usd.targetRaw,
+                  eurRaw: plan.eur.targetRaw,
+                  converterRaw: plan.converter.targetRaw,
+                  printFlag: printConverter ? '1' : '0',
+                });
+              }}
+            >
+              {updateState === 'updating' ? 'Updating…' : 'Update cashier'}
+            </button>
+          </div>
+
+          {updateResult ? (
+            <p
+              className={updateResult.restored ? 'hint' : 'plan-warnings'}
+              role={updateResult.restored ? undefined : 'alert'}
+            >
+              {updateState === 'verified'
+                ? 'Update verified; all four readbacks matched.'
+                : updateResult.restored
+                  ? 'Update failed; original records were restored.'
+                  : 'Update failed and restore did not verify.'}
+            </p>
+          ) : null}
         </>
       )}
     </section>

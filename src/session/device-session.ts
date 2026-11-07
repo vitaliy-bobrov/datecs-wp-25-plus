@@ -1,5 +1,6 @@
 import type { CaptureEntry, CaptureLog } from '../domain/capture-log';
 import { toHex } from '../domain/capture-log';
+import type { FullUpdateResult, UpdateTargets, UpdateValues } from '../domain/update-plan';
 import type { DeviceLock } from '../ports/device-lock';
 import {
   type DeviceTransport,
@@ -56,6 +57,7 @@ type ForeignReadState = 'idle' | 'reading' | 'read' | 'failed';
 
 type ConverterReadState = 'idle' | 'reading' | 'read' | 'failed';
 type WriteTestState = 'idle' | 'writing' | 'verified' | 'failed';
+type UpdateState = 'idle' | 'updating' | 'verified' | 'failed';
 
 interface WriteTestResult {
   field: string;
@@ -97,6 +99,8 @@ export interface SessionSnapshot {
   foreignReadState: ForeignReadState;
   converterReadState: ConverterReadState;
   writeTestState: WriteTestState;
+  updateState: UpdateState;
+  updateResult?: FullUpdateResult;
   preflight?: PreflightResult;
   foreignRead?: ForeignReadResult;
   converterRead?: ConverterReadResult;
@@ -149,6 +153,7 @@ export class DeviceSession {
     foreignReadState: 'idle',
     converterReadState: 'idle',
     writeTestState: 'idle',
+    updateState: 'idle',
     capture: [],
   };
 
@@ -212,6 +217,8 @@ export class DeviceSession {
       foreignReadState: 'idle',
       converterReadState: 'idle',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,
@@ -313,6 +320,8 @@ export class DeviceSession {
       foreignReadState: 'idle',
       converterReadState: 'idle',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,
@@ -331,7 +340,8 @@ export class DeviceSession {
       snapshot.readState === 'reading' ||
       snapshot.foreignReadState === 'reading' ||
       snapshot.converterReadState === 'reading' ||
-      snapshot.writeTestState === 'writing'
+      snapshot.writeTestState === 'writing' ||
+      snapshot.updateState === 'updating'
     );
   }
 
@@ -353,6 +363,8 @@ export class DeviceSession {
       foreignReadState: 'idle',
       converterReadState: 'idle',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,
@@ -550,6 +562,8 @@ export class DeviceSession {
       foreignReadState: 'idle',
       converterReadState: 'idle',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
@@ -605,6 +619,8 @@ export class DeviceSession {
       foreignReadState: 'reading',
       converterReadState: 'idle',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       foreignRead: undefined,
       converterRead: undefined,
       writeTest: undefined,
@@ -687,6 +703,8 @@ export class DeviceSession {
     this.set({
       converterReadState: 'reading',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       converterRead: undefined,
       writeTest: undefined,
     });
@@ -1120,6 +1138,248 @@ export class DeviceSession {
     }
   }
 
+  private takeWriteDelimiter(): number {
+    let delimiter = this.writeDelimiter;
+    if (delimiter > 0x7e) delimiter = 0x32;
+    this.writeDelimiter = delimiter + 1;
+    return delimiter;
+  }
+
+  async runFullUpdate(targets: UpdateTargets): Promise<void> {
+    const transport = this.transport;
+    const foreign = this.snapshot.foreignRead;
+    const converter = this.snapshot.converterRead;
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.transportKind !== 'webserial' ||
+      this.snapshot.readState !== 'read' ||
+      this.snapshot.foreignReadState !== 'read' ||
+      this.snapshot.converterReadState !== 'read' ||
+      this.snapshot.writeTestState === 'writing' ||
+      this.snapshot.updateState === 'updating' ||
+      !foreign ||
+      !converter?.rate ||
+      (converter.printFlag !== '0' && converter.printFlag !== '1')
+    ) {
+      return;
+    }
+
+    const usdSlot = foreign.slot0Name === 'USD' ? 0 : foreign.slot1Name === 'USD' ? 1 : null;
+    const eurSlot = foreign.slot0Name === 'EUR' ? 0 : foreign.slot1Name === 'EUR' ? 1 : null;
+    const usd = usdSlot === 0 ? foreign.slot0Rate : foreign.slot1Rate;
+    const eur = eurSlot === 0 ? foreign.slot0Rate : foreign.slot1Rate;
+    if (usdSlot === null || eurSlot === null || !usd || !eur) return;
+
+    const backups: UpdateValues = {
+      usd,
+      eur,
+      converter: converter.rate,
+      printFlag: converter.printFlag,
+    };
+    const values: UpdateValues = {
+      usd: String(targets.usdRaw),
+      eur: String(targets.eurRaw),
+      converter: String(targets.converterRaw),
+      printFlag: targets.printFlag,
+    };
+    if (
+      values.usd === backups.usd &&
+      values.eur === backups.eur &&
+      values.converter === backups.converter &&
+      values.printFlag === backups.printFlag
+    ) {
+      return;
+    }
+
+    const generation = this.preflightGeneration;
+    const transportKind = this.snapshot.transportKind;
+    const environment = environmentDetail();
+    let readbacks: UpdateValues | undefined;
+    let wrote = false;
+    let restored = true;
+    this.set({ updateState: 'updating', updateResult: undefined });
+
+    const readValue = async (frame: Uint8Array, label: string): Promise<string> => {
+      await transport.write(frame);
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes: frame,
+        message: `Update readback: ${label}`,
+      });
+      const raw = await this.readResponseBytes(
+        transport,
+        transportKind,
+        generation,
+        'update.readback',
+        'Update readback',
+      );
+      if (!this.isCurrentPreflight(transport, generation)) throw new Error('Session changed.');
+      if (raw.length === 0) throw new Error(`No readback for ${label}.`);
+      const parsed = parseReadResponse(raw);
+      if (!parsed || !responseMatchesRequest(parsed.header, frame)) {
+        throw new Error(`Invalid readback for ${label}.`);
+      }
+      const value = parsed.fields[0];
+      if (value === undefined) throw new Error(`Missing value for ${label}.`);
+      return value;
+    };
+
+    const writeValue = async (frame: Uint8Array, label: string): Promise<void> => {
+      await transport.write(frame);
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes: frame,
+        message: `Update write: ${label}`,
+      });
+      const raw = await this.readResponseBytes(
+        transport,
+        transportKind,
+        generation,
+        'update.write',
+        'Update write response',
+      );
+      if (!this.isCurrentPreflight(transport, generation)) throw new Error('Session changed.');
+      if (raw.length === 0) throw new Error(`No write response for ${label}.`);
+      const parsed = parseReadResponse(raw);
+      if (!parsed || !responseMatchesRequest(parsed.header, frame)) {
+        throw new Error(`Invalid write response for ${label}.`);
+      }
+    };
+
+    const readAll = async (): Promise<UpdateValues> => ({
+      usd: await readValue(buildRateReadback(this.takeWriteDelimiter(), usdSlot), 'USD rate'),
+      eur: await readValue(buildRateReadback(this.takeWriteDelimiter(), eurSlot), 'EUR rate'),
+      converter: await readValue(
+        buildConverterRateReadback(this.takeWriteDelimiter()),
+        'converter rate',
+      ),
+      printFlag: await readValue(
+        buildPrintFlagReadback(this.takeWriteDelimiter()),
+        'Print converter flag',
+      ),
+    });
+
+    const writeAll = async (next: UpdateValues): Promise<void> => {
+      await writeValue(buildRateWrite(next.usd, this.takeWriteDelimiter(), usdSlot), 'USD rate');
+      await writeValue(buildRateWrite(next.eur, this.takeWriteDelimiter(), eurSlot), 'EUR rate');
+      await writeValue(
+        buildConverterRateWrite(next.converter, this.takeWriteDelimiter()),
+        'converter rate',
+      );
+      await writeValue(
+        buildPrintFlagWrite(next.printFlag as '0' | '1', this.takeWriteDelimiter()),
+        'Print converter flag',
+      );
+    };
+
+    try {
+      const fresh = await readAll();
+      if (
+        fresh.usd !== backups.usd ||
+        fresh.eur !== backups.eur ||
+        fresh.converter !== backups.converter ||
+        fresh.printFlag !== backups.printFlag
+      ) {
+        throw new Error('Cashier records changed since the read; update aborted before writing.');
+      }
+
+      this.append({
+        kind: 'info',
+        transport: transportKind,
+        message: 'Full update starting',
+        detail: { backups, targets: values, ...environment },
+      });
+
+      wrote = true;
+      await writeAll(values);
+      readbacks = await readAll();
+      if (
+        readbacks.usd !== values.usd ||
+        readbacks.eur !== values.eur ||
+        readbacks.converter !== values.converter ||
+        readbacks.printFlag !== values.printFlag
+      ) {
+        throw new Error('Readback did not match the requested update.');
+      }
+
+      const updatedForeign = { ...foreign };
+      if (usdSlot === 0) updatedForeign.slot0Rate = values.usd;
+      else updatedForeign.slot1Rate = values.usd;
+      if (eurSlot === 0) updatedForeign.slot0Rate = values.eur;
+      else updatedForeign.slot1Rate = values.eur;
+      this.set({
+        updateState: 'verified',
+        foreignRead: updatedForeign,
+        converterRead: {
+          ...converter,
+          rate: values.converter,
+          printFlag: values.printFlag,
+        },
+        updateResult: { backups, targets, readbacks, restored: true },
+      });
+      this.append({
+        kind: 'info',
+        transport: transportKind,
+        message: 'Full update verified',
+        detail: { backups, targets: values, readbacks, ...environment },
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (wrote) {
+        this.append({
+          kind: 'info',
+          transport: transportKind,
+          message: 'Restoring all currency records after update failure',
+        });
+        try {
+          await writeAll(backups);
+          const restoredReadbacks = await readAll();
+          restored =
+            restoredReadbacks.usd === backups.usd &&
+            restoredReadbacks.eur === backups.eur &&
+            restoredReadbacks.converter === backups.converter &&
+            restoredReadbacks.printFlag === backups.printFlag;
+          readbacks = restoredReadbacks;
+        } catch {
+          restored = false;
+        }
+      }
+      if (restored) {
+        const restoredForeign = { ...foreign };
+        if (usdSlot === 0) restoredForeign.slot0Rate = backups.usd;
+        else restoredForeign.slot1Rate = backups.usd;
+        if (eurSlot === 0) restoredForeign.slot0Rate = backups.eur;
+        else restoredForeign.slot1Rate = backups.eur;
+        this.set({
+          foreignRead: restoredForeign,
+          converterRead: {
+            ...converter,
+            rate: backups.converter,
+            printFlag: backups.printFlag,
+          },
+        });
+      }
+      this.append({
+        kind: 'error',
+        code: 'unknown',
+        message: restored
+          ? 'Full update failed; original records restored.'
+          : 'Full update failed; restore did not verify.',
+        errorMessage: message,
+        detail: { backups, targets: values, readbacks, restored, ...environment },
+      });
+      this.set({
+        updateState: 'failed',
+        updateResult: { backups, targets, readbacks, restored, message },
+      });
+    }
+  }
+
   clearCapture(): void {
     if (this.isDeviceBusy()) return;
     this.capture.clear();
@@ -1131,6 +1391,8 @@ export class DeviceSession {
       foreignReadState: 'idle',
       converterReadState: 'idle',
       writeTestState: 'idle',
+      updateState: 'idle',
+      updateResult: undefined,
       preflight: undefined,
       foreignRead: undefined,
       converterRead: undefined,

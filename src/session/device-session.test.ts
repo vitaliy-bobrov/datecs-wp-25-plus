@@ -542,6 +542,136 @@ describe('DeviceSession', () => {
     });
   });
 
+  it('writes and verifies the full four-field update', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    // Fresh precheck in the current order: USD, EUR, converter, print.
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('43955', '3'),
+      type2Response('39251', '4'),
+      type2Response('1', '5'),
+      // Four write responses.
+      type2Response('', '6'),
+      type2Response('', '7'),
+      type2Response('', '8'),
+      type2Response('', '9'),
+      // Four readbacks at the targets.
+      type2Response('39321', ':'),
+      type2Response('43925', ';'),
+      type2Response('39321', '<'),
+      type2Response('1', '='),
+    );
+    await session.runFullUpdate({
+      usdRaw: 39321,
+      eurRaw: 43925,
+      converterRaw: 39321,
+      printFlag: '1',
+    });
+
+    expect(session.getSnapshot().updateState).toBe('verified');
+    expect(session.getSnapshot().foreignRead).toMatchObject({
+      slot0Rate: '39321',
+      slot1Rate: '43925',
+    });
+    expect(session.getSnapshot().converterRead).toMatchObject({
+      rate: '39321',
+      printFlag: '1',
+    });
+    expect(session.getSnapshot().updateResult).toMatchObject({
+      backups: { usd: '39251', eur: '43955', converter: '39251', printFlag: '1' },
+      targets: { usdRaw: 39321, eurRaw: 43925, converterRaw: 39321, printFlag: '1' },
+      restored: true,
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 12);
+    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
+  });
+
+  it('restores all four fields when the update readback does not match', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      // precheck
+      type2Response('39251', '2'),
+      type2Response('43955', '3'),
+      type2Response('39251', '4'),
+      type2Response('1', '5'),
+      // writes
+      type2Response('', '6'),
+      type2Response('', '7'),
+      type2Response('', '8'),
+      type2Response('', '9'),
+      // wrong USD readback, then other readbacks
+      type2Response('39322', ':'),
+      type2Response('43925', ';'),
+      type2Response('39321', '<'),
+      type2Response('1', '='),
+      // restore writes
+      type2Response('', '>'),
+      type2Response('', '?'),
+      type2Response('', '@'),
+      type2Response('', 'A'),
+      // restore readbacks
+      type2Response('39251', 'B'),
+      type2Response('43955', 'C'),
+      type2Response('39251', 'D'),
+      type2Response('1', 'E'),
+    );
+    await session.runFullUpdate({
+      usdRaw: 39321,
+      eurRaw: 43925,
+      converterRaw: 39321,
+      printFlag: '1',
+    });
+
+    expect(session.getSnapshot().updateState).toBe('failed');
+    expect(session.getSnapshot().updateResult?.restored).toBe(true);
+    expect(session.getSnapshot().foreignRead?.slot0Rate).toBe('39251');
+    expect(session.getSnapshot().converterRead?.rate).toBe('39251');
+  });
+
+  it('aborts the full update before writing when the precheck changed', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('43955', '3'),
+      type2Response('39251', '4'),
+      type2Response('0', '5'),
+    );
+    await session.runFullUpdate({
+      usdRaw: 39321,
+      eurRaw: 43925,
+      converterRaw: 39321,
+      printFlag: '1',
+    });
+
+    expect(session.getSnapshot().updateState).toBe('failed');
+    expect(session.getSnapshot().updateResult?.restored).toBe(true);
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 4);
+  });
+
   it('fails the local read visibly when no response arrives', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());
