@@ -19,6 +19,8 @@ export function stateLabel(value: string): string {
     captured: 'Captured',
     captureOnly: 'Capture only',
     failed: 'Failed',
+    reading: 'Reading',
+    read: 'Read',
   };
   return labels[value] ?? value;
 }

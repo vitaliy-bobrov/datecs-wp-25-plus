@@ -49,7 +49,7 @@ export function sumFromStxToEnq(bytes: Uint8Array, enqIndex: number): number {
   return sum & 0xffff;
 }
 
-function bccMatches(bytes: Uint8Array, start: number, expected: number): boolean {
+export function bccMatches(bytes: Uint8Array, start: number, expected: number): boolean {
   if (start + 4 > bytes.length) return false;
   const decoded = decodeNibbles(bytes, start, 4);
   return decoded !== null && decoded === expected;

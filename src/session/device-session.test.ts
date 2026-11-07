@@ -9,6 +9,7 @@ import type {
   TransportSelector,
 } from '../ports/transport';
 import { TransportError } from '../ports/transport';
+import { READ_LOCAL_FRAMES } from '../protocol/read-currencies';
 import { DeviceSession } from './device-session';
 
 class FixedClock {
@@ -300,6 +301,47 @@ describe('DeviceSession', () => {
 
     expect(session.getSnapshot().captureState).toBe('captured');
     expect(session.getSnapshot().preflight?.mode).toBe('type2');
+  });
+
+  it('replays the exact local read sequence after the preflight', async () => {
+    const lock = new FakeLock();
+    const selector = new FakeSelector();
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+
+    const hex = (value: string) =>
+      Uint8Array.from((value.match(/../g) ?? []).map((byte) => Number.parseInt(byte, 16)));
+    transport.rx.push(
+      SIMULATOR_PREFLIGHT_RESPONSE,
+      hex('160130303335213030363630090480808280869a8080053036313903'),
+      hex('1601303033372230303f3f300931090480808280869a8080053036363803'),
+      hex('1601303033392330303f3f3009504c4e090480808280869a8080053037323403'),
+      hex(
+        '1601303034372430303f3f300930382d30332d32342030393a30383a3035090480808280869a8080053039383f03',
+      ),
+      hex('1601303033392530303f3f3009504c4e090480808280869a8080053037323603'),
+      hex(
+        '1601303034372630303f3f300932362d31332d33362033303a33313a3539090480808280869a8080053039393403',
+      ),
+    );
+
+    await session.runPreflight();
+    await session.runReadLocal();
+
+    expect(session.getSnapshot().readState).toBe('read');
+    expect(session.getSnapshot().localRead).toMatchObject({
+      barcode: '1',
+      localName: 'PLN',
+      currencyDate: '08-03-24 09:08:05',
+      pgmLocalName: 'PLN',
+      pgmCurrencyDate: '26-13-36 30:31:59',
+    });
+    expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length);
+    expect(transport.written.every((frame) => !frame.includes(0xff))).toBe(true);
   });
 
   it('reports an unavailable lock', async () => {

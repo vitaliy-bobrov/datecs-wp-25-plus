@@ -265,6 +265,58 @@ export function App({ session }: AppProps) {
         ) : (
           <p className="empty">No preflight yet. Connect first, then run it.</p>
         )}
+
+        <div className="read-local">
+          <div className="card-heading">
+            <div>
+              <h3>Local currency read</h3>
+              <p className="muted">
+                Replays the exact ECR Tool read sequence. Local PLN only; foreign slots are not
+                readable yet.
+              </p>
+            </div>
+            <span className={`state state-${stateClass(snapshot.readState)}`}>
+              {stateLabel(snapshot.readState)}
+            </span>
+          </div>
+          <button
+            type="button"
+            className="button primary"
+            onClick={() => void session.runReadLocal()}
+            disabled={
+              snapshot.transportKind !== 'webserial' ||
+              snapshot.captureState !== 'captured' ||
+              snapshot.readState === 'reading'
+            }
+          >
+            {snapshot.readState === 'reading' ? 'Reading…' : 'Read local currencies'}
+          </button>
+
+          {snapshot.localRead ? (
+            <dl className="read-values">
+              <div>
+                <dt>Barcode</dt>
+                <dd>{snapshot.localRead.barcode ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Local name</dt>
+                <dd>{snapshot.localRead.localName ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Currency date</dt>
+                <dd>{snapshot.localRead.currencyDate ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Programmed local</dt>
+                <dd>{snapshot.localRead.pgmLocalName ?? '—'}</dd>
+              </div>
+              <div>
+                <dt>Programmed date</dt>
+                <dd>{snapshot.localRead.pgmCurrencyDate ?? '—'}</dd>
+              </div>
+            </dl>
+          ) : null}
+        </div>
       </section>
 
       <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />

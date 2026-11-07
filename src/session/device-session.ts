@@ -12,6 +12,7 @@ import {
   toTransportError,
 } from '../ports/transport';
 import { PREFLIGHT_FRAME, parseResponse } from '../protocol/preflight';
+import { parseReadResponse, READ_LOCAL_FRAMES } from '../protocol/read-currencies';
 
 type SessionPhase = 'idle' | 'connecting' | 'connected' | 'error';
 type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable';
@@ -35,6 +36,17 @@ interface PreflightResult {
   reason?: string;
 }
 
+type ReadState = 'idle' | 'reading' | 'read' | 'failed';
+
+interface LocalReadResult {
+  barcode?: string;
+  localName?: string;
+  currencyDate?: string;
+  pgmLocalName?: string;
+  pgmCurrencyDate?: string;
+  rawFrames?: string[];
+}
+
 export interface SessionSnapshot {
   phase: SessionPhase;
   lockState: LockState;
@@ -42,7 +54,9 @@ export interface SessionSnapshot {
   info?: TransportInfo;
   error?: SessionError;
   captureState: CaptureState;
+  readState: ReadState;
   preflight?: PreflightResult;
+  localRead?: LocalReadResult;
   capture: readonly CaptureEntry[];
 }
 
@@ -80,6 +94,7 @@ export class DeviceSession {
     phase: 'idle',
     lockState: 'idle',
     captureState: 'idle',
+    readState: 'idle',
     capture: [],
   };
 
@@ -137,7 +152,9 @@ export class DeviceSession {
       phase: 'connecting',
       transportKind: kind,
       captureState: 'idle',
+      readState: 'idle',
       preflight: undefined,
+      localRead: undefined,
       error: undefined,
     });
     this.append({
@@ -203,7 +220,9 @@ export class DeviceSession {
       transportKind: undefined,
       error: undefined,
       captureState: 'idle',
+      readState: 'idle',
       preflight: undefined,
+      localRead: undefined,
     });
   }
 
@@ -222,7 +241,12 @@ export class DeviceSession {
     let attempts = 0;
     const environment = environmentDetail();
     const transportKind = this.snapshot.transportKind ?? 'webserial';
-    this.set({ captureState: 'capturing', preflight: undefined });
+    this.set({
+      captureState: 'capturing',
+      readState: 'idle',
+      preflight: undefined,
+      localRead: undefined,
+    });
 
     try {
       await transport.flushInput();
@@ -395,13 +419,188 @@ export class DeviceSession {
     return raw;
   }
 
+  async runReadLocal(): Promise<void> {
+    const transport = this.transport;
+    if (
+      this.snapshot.phase !== 'connected' ||
+      !transport ||
+      this.snapshot.transportKind !== 'webserial' ||
+      this.snapshot.captureState !== 'captured' ||
+      this.snapshot.readState === 'reading'
+    ) {
+      return;
+    }
+
+    const generation = this.preflightGeneration;
+    const transportKind = this.snapshot.transportKind;
+    const environment = environmentDetail();
+    this.set({ readState: 'reading', localRead: undefined });
+
+    const local: LocalReadResult = { rawFrames: [] };
+
+    for (const frame of READ_LOCAL_FRAMES) {
+      if (!this.isCurrentPreflight(transport, generation)) return;
+
+      try {
+        await transport.write(frame.bytes);
+      } catch (error) {
+        this.failRead(
+          'preflight.read.write',
+          toTransportError(error, 'local-read.write'),
+          environment,
+        );
+        return;
+      }
+
+      this.append({
+        kind: 'tx',
+        direction: 'tx',
+        transport: transportKind,
+        bytes: frame.bytes,
+        message: `Read local: ${frame.label}`,
+      });
+
+      let raw: Uint8Array;
+      try {
+        raw = await this.readLocalResponse(transport, transportKind, generation);
+      } catch (error) {
+        if (!this.isCurrentPreflight(transport, generation)) return;
+        this.failRead(
+          'preflight.read.read',
+          toTransportError(error, 'local-read.read'),
+          environment,
+        );
+        return;
+      }
+      if (!this.isCurrentPreflight(transport, generation)) return;
+
+      if (raw.length === 0) {
+        this.failRead(
+          'preflight.read.timeout',
+          new TransportError('timeout', 'No local currency response within 500 ms.', {
+            operation: 'local-read.read',
+            stage: 'timeout',
+          }),
+          environment,
+        );
+        return;
+      }
+
+      const parsed = parseReadResponse(raw);
+      if (!parsed) {
+        this.failRead(
+          'preflight.read.parse',
+          new TransportError(
+            'device-unavailable',
+            'The local currency response was not a valid Type2 frame.',
+            {
+              operation: 'local-read.read',
+              stage: 'parse',
+              errorMessage: toHex(raw),
+            },
+          ),
+          environment,
+        );
+        return;
+      }
+      local.rawFrames?.push(parsed.rawHex);
+
+      const value = parsed.fields[0];
+      if (value !== undefined) {
+        switch (frame.label) {
+          case 'barcode':
+            local.barcode = value;
+            break;
+          case 'localName':
+            local.localName = value;
+            break;
+          case 'currencyDate':
+            local.currencyDate = value;
+            break;
+          case 'pgmLocalName':
+            local.pgmLocalName = value;
+            break;
+          case 'pgmCurrencyDate':
+            local.pgmCurrencyDate = value;
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    if (!this.isCurrentPreflight(transport, generation)) return;
+    this.append({
+      kind: 'info',
+      transport: transportKind,
+      message: 'Local currency values read',
+      detail: { ...local, ...environment } as Record<string, unknown>,
+    });
+    this.set({ readState: 'read', localRead: local });
+  }
+
+  private async readLocalResponse(
+    transport: DeviceTransport,
+    transportKind: TransportKind,
+    generation: number,
+  ): Promise<Uint8Array> {
+    let raw: Uint8Array = new Uint8Array();
+    const deadline = Date.now() + 500;
+
+    while (Date.now() < deadline) {
+      if (!this.isCurrentPreflight(transport, generation)) return raw;
+      const remaining = Math.max(1, deadline - Date.now());
+      let chunk: Uint8Array;
+      try {
+        chunk = await transport.readChunk(remaining);
+      } catch (error) {
+        const transportError = toTransportError(error, 'local-read.read');
+        if (transportError.code === 'timeout') break;
+        throw transportError;
+      }
+      if (!this.isCurrentPreflight(transport, generation)) return raw;
+      if (chunk.length === 0) continue;
+      raw = concatBytes(raw, chunk);
+      this.append({
+        kind: 'rx',
+        direction: 'rx',
+        transport: transportKind,
+        bytes: chunk,
+        message: 'Read local rx',
+      });
+      if (parseReadResponse(raw)) return raw;
+      if (raw.length > 512) break;
+    }
+
+    return raw;
+  }
+
+  private failRead(
+    _operation: string,
+    error: TransportError,
+    environment: TransportErrorDetail,
+  ): void {
+    this.append({
+      kind: 'error',
+      code: error.code,
+      message: PUBLIC_ERROR[error.code],
+      stage: error.detail?.stage,
+      errorName: error.detail?.errorName,
+      errorMessage: error.detail?.errorMessage,
+      detail: { ...environment, ...error.detail } as Record<string, unknown>,
+    });
+    this.set({ readState: 'failed' });
+  }
+
   clearCapture(): void {
     this.capture.clear();
     this.snapshot = {
       ...this.snapshot,
       capture: this.capture.snapshot(),
       captureState: 'idle',
+      readState: 'idle',
       preflight: undefined,
+      localRead: undefined,
     };
     this.emit();
   }
