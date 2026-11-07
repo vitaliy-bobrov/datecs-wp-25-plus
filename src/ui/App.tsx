@@ -10,6 +10,7 @@ import { captureDownload, downloadText } from './download';
 import { displayEntries, formatTimestamp, formatUsbIds, stateClass, stateLabel } from './log-view';
 import { NbpPanel, type NbpState } from './NbpPanel';
 import { RateComparison } from './RateComparison';
+import { UpdatePreview } from './UpdatePreview';
 
 interface AppProps {
   session: DeviceSession;
@@ -445,6 +446,8 @@ export function App({ session }: AppProps) {
       <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
 
       <RateComparison nbp={nbp} cashier={cashierRates} />
+
+      <UpdatePreview foreign={snapshot.foreignRead} converter={snapshot.converterRead} nbp={nbp} />
 
       <section className="card logger" aria-labelledby="logger-heading">
         <div className="card-heading">

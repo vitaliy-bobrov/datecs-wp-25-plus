@@ -487,3 +487,20 @@ h2 {
 .comparison-table .delta {
   font-family: var(--mono);
 }
+
+.plan-backup {
+  margin-top: 16px;
+}
+.checkline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  font-size: 0.85rem;
+}
+.plan-warnings {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--danger);
+  font-size: 0.82rem;
+}
