@@ -109,7 +109,7 @@ describe('WebSerialTransport diagnostics', () => {
 
   it('keeps the open stage, error name and device on failure', async () => {
     const port = new FakePort();
-    port.openFailure = new DOMException('Failed to open /dev/ttyUSB0', 'NetworkError');
+    port.openFailure = new DOMException('Failed to open the serial port', 'NetworkError');
     const transport = new WebSerialTransport(port);
 
     await expect(transport.open()).rejects.toMatchObject({
