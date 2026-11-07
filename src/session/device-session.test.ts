@@ -443,18 +443,13 @@ describe('DeviceSession', () => {
       return Uint8Array.from([...body, ...bcc, 0x03]);
     };
 
-    transport.rx.push(
-      response(''),
-      response('US Dollar TEST'),
-      response(''),
-      response('US Dollar'),
-    );
+    transport.rx.push(response(''), response('US Dollar T'), response(''), response('US Dollar'));
     await session.runFullNameWriteTest();
     expect(session.getSnapshot().writeTestState).toBe('verified');
     expect(session.getSnapshot().writeTest).toMatchObject({
       original: 'US Dollar',
-      temporary: 'US Dollar TEST',
-      temporaryReadback: 'US Dollar TEST',
+      temporary: 'US Dollar T',
+      temporaryReadback: 'US Dollar T',
       restoredReadback: 'US Dollar',
       restored: true,
     });

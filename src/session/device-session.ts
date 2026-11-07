@@ -863,7 +863,7 @@ export class DeviceSession {
       return;
     }
 
-    const temporary = `${original} TEST`;
+    const temporary = `${original} T`;
     const writeTemporary = buildFullNameWrite(temporary, 0x32);
     const readTemporary = buildFullNameReadback(0x33);
     const writeRestore = buildFullNameWrite(original, 0x34);

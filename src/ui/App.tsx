@@ -127,7 +127,7 @@ export function App({ session }: AppProps) {
       `One-field production write test.\n\n` +
         `Field: slot 0 full name\n` +
         `Current: ${original}\n` +
-        `Temporary: ${original} TEST\n\n` +
+        `Temporary: ${original} T\n\n` +
         `It will write the temporary name, read it back, restore the original, and read it back again. ` +
         `No rate, short name, flag or converter value is touched. Continue?`,
     );
