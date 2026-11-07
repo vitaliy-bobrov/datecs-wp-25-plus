@@ -1,4 +1,4 @@
-export type TransportKind = 'webserial';
+export type TransportKind = 'webserial' | 'simulator';
 
 export type TransportErrorCode =
   | 'unsupported'

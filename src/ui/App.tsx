@@ -4,11 +4,17 @@ import { nbpClient } from '../app/nbp-service';
 import { errorMessage, type NbpSnapshot } from '../domain/nbp';
 import type { CaptureEntry } from '../domain/capture-log';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
+import type { TransportKind } from '../ports/transport';
 import { downloadText } from './download';
 
 interface AppProps {
   session: DeviceSession;
 }
+
+const TRANSPORT_LABEL: Record<TransportKind, string> = {
+  webserial: 'Web Serial',
+  simulator: 'Simulator',
+};
 
 type NbpState =
   | { status: 'loading' }
@@ -79,8 +85,8 @@ export function App({ session }: AppProps) {
   const canPreflight =
     snapshot.phase === 'connected' && snapshot.captureState !== 'capturing';
 
-  const connect = () => {
-    void session.connect();
+  const connect = (kind: TransportKind) => {
+    void session.connect(kind);
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -108,7 +114,7 @@ export function App({ session }: AppProps) {
           <p className="eyebrow">Datecs WP-25 Plus</p>
           <h1>Capture shell</h1>
           <p className="lede">
-            Read-only Web Serial connection, preflight capture and local logger. This build sends only the known preflight — no currency read or write.
+            Read-only Web Serial or simulator connection, preflight capture, Type2 logger and NBP reference. This build sends only the known preflight — no currency read or write.
           </p>
         </div>
         <span className="version">v{__APP_VERSION__}</span>
@@ -125,16 +131,25 @@ export function App({ session }: AppProps) {
 
         <div className="connection-grid">
           <div>
-            <p className="label">Device transport</p>
+            <p className="label">Transport</p>
             <div className="button-row">
               <button
                 type="button"
                 className="button primary"
-                onClick={connect}
+                onClick={() => connect('webserial')}
                 disabled={!canConnect || !supportsWebSerial()}
                 title={supportsWebSerial() ? 'Select the cashier with Web Serial' : 'Web Serial is unavailable'}
               >
                 Connect Web Serial
+              </button>
+              <button
+                type="button"
+                className="button"
+                onClick={() => connect('simulator')}
+                disabled={!canConnect}
+                title="Open the built-in Type2 preflight simulator"
+              >
+                Open simulator
               </button>
               <button
                 type="button"
@@ -146,14 +161,14 @@ export function App({ session }: AppProps) {
               </button>
             </div>
             <p className="hint">
-              Web Serial is the only supported transport. No WebUSB, driver or auto-selection path.
+              Web Serial is the only hardware transport. The simulator is an explicit test path; nothing is auto-selected.
             </p>
           </div>
 
           <dl className="facts">
             <div>
               <dt>Transport</dt>
-              <dd>{snapshot.transportKind ? 'Web Serial' : '—'}</dd>
+              <dd>{snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : '—'}</dd>
             </div>
             <div>
               <dt>Device</dt>
@@ -172,7 +187,7 @@ export function App({ session }: AppProps) {
 
         <div className="status" role="status" aria-live="polite">
           {snapshot.phase === 'connected'
-            ? 'Connected via Web Serial.'
+            ? `Connected via ${snapshot.transportKind ? TRANSPORT_LABEL[snapshot.transportKind] : 'transport'}.`
             : snapshot.error
               ? `${snapshot.error.message}${snapshot.error.detail?.stage ? ` (${snapshot.error.detail.stage}${snapshot.error.detail.errorName ? `, ${snapshot.error.detail.errorName}` : ''})` : ''}`
               : lockMessage(snapshot.lockState)}
@@ -319,7 +334,7 @@ export function App({ session }: AppProps) {
                   <tr key={entry.id}>
                     <td className="mono nowrap">{formatTime(entry.ts)}</td>
                     <td>{entry.kind}</td>
-                    <td>{entry.transport ? 'Web Serial' : '—'}</td>
+                    <td>{entry.transport ? TRANSPORT_LABEL[entry.transport] : '—'}</td>
                     <td>{entry.device ?? '—'}</td>
                     <td className="mono bytes">{entry.bytesHex ?? '—'}</td>
                     <td>
@@ -336,7 +351,7 @@ export function App({ session }: AppProps) {
 
       <footer className="footer">
         <p>
-          Web Serial preflight capture only. No currency read, 0xFF, NBP request or write is implemented.
+          Web Serial or simulator preflight capture only. No currency read, 0xFF or write is implemented.
         </p>
       </footer>
     </main>

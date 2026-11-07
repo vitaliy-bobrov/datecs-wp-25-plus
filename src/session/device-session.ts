@@ -109,7 +109,7 @@ export class DeviceSession {
     this.set({ lockState: this.lock.supported ? 'in-use' : 'unavailable' });
   }
 
-  async connect(): Promise<void> {
+  async connect(kind: TransportKind = 'webserial'): Promise<void> {
     if (this.snapshot.phase === 'connecting' || this.snapshot.phase === 'connected') return;
 
     if (this.snapshot.lockState !== 'held') {
@@ -128,30 +128,30 @@ export class DeviceSession {
     const environment = environmentDetail();
     this.set({
       phase: 'connecting',
-      transportKind: 'webserial',
+      transportKind: kind,
       captureState: 'idle',
       preflight: undefined,
       error: undefined,
     });
     this.append({
       kind: 'session',
-      transport: 'webserial',
+      transport: kind,
       message: 'Connecting',
       detail: environment as Record<string, unknown>,
     });
 
     try {
-      const transport = await this.selector.select('webserial');
+      const transport = await this.selector.select(kind);
       const info = await transport.open();
       this.transport = transport;
       this.set({
         phase: 'connected',
-        transportKind: 'webserial',
+        transportKind: kind,
         info,
       });
       this.append({
         kind: 'connect',
-        transport: 'webserial',
+        transport: kind,
         device: info.label,
         message: 'Connected',
         detail: { ...info, ...environment },
@@ -201,11 +201,12 @@ export class DeviceSession {
     }
 
     const environment = environmentDetail();
+    const transportKind = this.snapshot.transportKind ?? 'webserial';
     this.set({ captureState: 'capturing', preflight: undefined });
     this.append({
       kind: 'tx',
       direction: 'tx',
-      transport: 'webserial',
+      transport: transportKind,
       bytes: PREFLIGHT_FRAME,
       message: 'Preflight tx',
       detail: environment as Record<string, unknown>,
@@ -230,7 +231,7 @@ export class DeviceSession {
         this.append({
           kind: 'rx',
           direction: 'rx',
-          transport: 'webserial',
+          transport: transportKind,
           bytes: chunk,
           message: 'Preflight rx',
           detail: environment as Record<string, unknown>,
@@ -278,7 +279,7 @@ export class DeviceSession {
       };
       this.append({
         kind: 'info',
-        transport: 'webserial',
+        transport: transportKind,
         message: `Preflight captured (${outcome.frame.mode})`,
         detail: {
           mode: outcome.frame.mode,
@@ -297,7 +298,7 @@ export class DeviceSession {
     const reason = outcome.kind === 'ambiguous' ? outcome.reason : outcome.reason;
     this.append({
       kind: 'info',
-      transport: 'webserial',
+      transport: transportKind,
       message: 'Preflight capture-only',
       detail: {
         reason,

@@ -1,3 +1,4 @@
+import { SimulatorTransport } from './simulator-transport';
 import { WebSerialTransport } from './webserial-transport';
 import {
   TransportError,
@@ -8,7 +9,11 @@ import {
 } from '../ports/transport';
 
 export class BrowserTransportSelector implements TransportSelector {
-  async select(_kind: TransportKind): Promise<DeviceTransport> {
+  async select(kind: TransportKind): Promise<DeviceTransport> {
+    if (kind === 'simulator') {
+      return new SimulatorTransport();
+    }
+
     if (typeof navigator === 'undefined' || !navigator.serial) {
       throw new TransportError('unsupported', 'Web Serial is not available in this browser.', {
         operation: 'webserial.request-port',

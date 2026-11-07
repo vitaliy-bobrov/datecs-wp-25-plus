@@ -1,6 +1,6 @@
 # Datecs WP-25 Plus — capture shell
 
-Web Serial-only capture shell: a deployable Vite/React/TypeScript app with connection diagnostics, the known short preflight, a Type2 response logger and an NBP USD/EUR reference panel. It sends no currency read or write.
+Web Serial or simulator capture shell: a deployable Vite/React/TypeScript app with connection diagnostics, the known short preflight, a Type2 response logger and an NBP USD/EUR reference panel. It sends no currency read or write.
 
 ## Develop
 
@@ -28,7 +28,8 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 
 1. Open the Pages URL on the host.
 2. Choose **Connect Web Serial**. WebUSB is not supported.
-3. Select the cashier, confirm the connected state, then disconnect.
+3. Or choose **Open simulator** to exercise the exact Type2 preflight without hardware.
+4. For hardware, select the cashier, confirm the connected state, then disconnect.
 4. Download the JSONL and/or text log.
 5. Connect, run the preflight, and download the JSONL/text. The log must contain the exact preflight tx and raw response (or timeout/control result), with no currency read or write.
 
@@ -36,6 +37,6 @@ No Docker USB passthrough is used. The DSH/container environment is for building
 
 ## Current scope
 
-Web Serial only. The app connects, sends the exact short preflight, captures and validates the I90 Type2 response, and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`, currency read or write.
+Web Serial for hardware; an explicit simulator for the same preflight path. The app connects, sends the exact short preflight, captures and validates the I90 Type2 response, and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`, currency read or write.
 
 The next step is analysing the hardware response; the read/write epic remains gated on real evidence.

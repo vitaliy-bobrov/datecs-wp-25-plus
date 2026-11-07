@@ -9,6 +9,7 @@ import type {
 } from '../ports/transport';
 import { TransportError } from '../ports/transport';
 import { DeviceSession } from './device-session';
+import { SimulatorTransport } from '../adapters/simulator-transport';
 
 class FixedClock {
   nowIso(): string {
@@ -161,6 +162,28 @@ describe('DeviceSession', () => {
     ]);
     expect(session.getSnapshot().captureState).toBe('captureOnly');
     expect(session.getSnapshot().preflight?.rawHex).toBe('15');
+    expect(session.getSnapshot().capture.some((entry) => entry.kind === 'tx')).toBe(true);
+    expect(session.getSnapshot().capture.some((entry) => entry.kind === 'rx')).toBe(true);
+  });
+
+  it('captures the simulator Type2 preflight end to end', async () => {
+    const lock = new FakeLock();
+    const selector: TransportSelector = {
+      select: async (kind) => {
+        expect(kind).toBe('simulator');
+        return new SimulatorTransport();
+      },
+    };
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock);
+
+    await session.acquireLock();
+    await session.connect('simulator');
+    await session.runPreflight();
+
+    expect(session.getSnapshot().transportKind).toBe('simulator');
+    expect(session.getSnapshot().captureState).toBe('captured');
+    expect(session.getSnapshot().preflight?.mode).toBe('type2');
+    expect(session.getSnapshot().preflight?.statusHex).toBe('80808280869a8080');
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'tx')).toBe(true);
     expect(session.getSnapshot().capture.some((entry) => entry.kind === 'rx')).toBe(true);
   });
