@@ -31,6 +31,26 @@ describe('NbpPanel', () => {
     expect(html).not.toContain('https://api.nbp.pl/');
   });
 
+  it('keeps the previous table visible while refreshing', () => {
+    const html = renderToStaticMarkup(
+      <NbpPanel state={{ status: 'loading', data: snapshot }} onRefresh={() => undefined} />,
+    );
+    expect(html).toContain('Refreshing…');
+    expect(html).toContain('3.9321');
+    expect(html).toContain('aria-busy="true"');
+  });
+
+  it('keeps the previous table with an explicit refresh failure', () => {
+    const html = renderToStaticMarkup(
+      <NbpPanel
+        state={{ status: 'error', message: 'NBP is unavailable.', data: snapshot }}
+        onRefresh={() => undefined}
+      />,
+    );
+    expect(html).toContain('NBP refresh failed: NBP is unavailable.');
+    expect(html).toContain('Showing the previous table.');
+    expect(html).toContain('3.9321');
+  });
   it('renders the error and retry state', () => {
     const html = renderToStaticMarkup(
       <NbpPanel

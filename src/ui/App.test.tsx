@@ -68,14 +68,13 @@ afterEach(() => {
 });
 
 describe('App read lifecycle', () => {
-  it('gates Connect and Read behind the idle acknowledgement', () => {
+  it('does not gate Connect and Read behind an idle checkbox', () => {
     const html = renderToStaticMarkup(<App session={sessionFor(base)} />);
 
-    expect(html).toContain('Cashier is idle and no sale is open');
-    expect(html).toContain('Connect and Read stay disabled');
-    expect(html).not.toMatch(/checked=""/);
-    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Connect cashier<\/button>/);
-    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Read cashier<\/button>/);
+    expect(html).not.toContain('Cashier is idle and no sale is open');
+    expect(html).not.toContain('idle-gate-hint');
+    expect(html).toContain('Connecting starts the preflight');
+    expect(html).toMatch(/<button[^>]*aria-disabled="false"[^>]*>Connect cashier<\/button>/);
   });
 
   it('fills the existing status slot with a failed read and keeps the cached pair', () => {
@@ -96,7 +95,7 @@ describe('App read lifecycle', () => {
     expect(html).toContain('Last read');
     expect(html).toContain('3.9251');
     expect(html).toContain('4.3955');
-    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Read again<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="false"[^>]*>Read again<\/button>/);
     expect(html).not.toContain('class="card panel read-error"');
   });
 
@@ -118,7 +117,6 @@ describe('App read lifecycle', () => {
 
     expect(html).toContain('Read incomplete');
     expect(html).toContain('Update is unavailable; read again.');
-    expect(html).toContain('confirmation was cleared after the failed read');
     expect(html).toContain('3.9251');
     expect(html).toContain('4.3955');
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Review update/);
@@ -182,7 +180,7 @@ describe('App read lifecycle', () => {
     expect(html).toContain('I confirm this is the cashier at the till');
     expect(html).toContain('The device exposes no distinguishing serial');
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Update cashier<\/button>/);
-    expect(html).toContain('Tick the idle acknowledgement before writing.');
+    expect(html).toContain('The update gate is not ready; retry the read or NBP reference.');
     expect(html).toContain('last-read cache');
   });
 

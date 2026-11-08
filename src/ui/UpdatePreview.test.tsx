@@ -202,9 +202,24 @@ describe('UpdatePreview', () => {
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
   });
 
+  it('blocks Review while the NBP reference is refreshing', () => {
+    const html = markup({ nbp: { status: 'loading', data: nbp.data } });
+    expect(html).toContain('NBP reference is refreshing');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+  });
+
+  it('blocks Review after an NBP refresh failure with retained data', () => {
+    const html = markup({
+      nbp: { status: 'error', message: 'NBP is unavailable.', data: nbp.data },
+    });
+    expect(html).toContain('NBP refresh failed. Retry the reference before updating.');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+  });
   it('blocks Review with a reason while a write is in progress', () => {
     const html = markup({ writeBusy: true });
-    expect(html).toContain('A write is in progress. Wait for it to finish before reviewing an update.');
+    expect(html).toContain(
+      'A write is in progress. Wait for it to finish before reviewing an update.',
+    );
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
     expect(html).toMatch(/aria-describedby="[^"]+"/);
   });

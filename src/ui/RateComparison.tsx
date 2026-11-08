@@ -35,7 +35,7 @@ export function RateComparison({
   readAt,
 }: RateComparisonProps) {
   const hasCashier = CODES.some((code) => cashier[code]);
-  const table = nbp.status === 'ready' ? nbp.data.table : null;
+  const table = nbp.data?.table ?? null;
   const rows = CODES.map((code) => {
     const raw = cashier[code];
     const mid = table?.rates.find((rate) => rate.code === code)?.mid;
@@ -66,6 +66,11 @@ export function RateComparison({
           <h2 id="comparison-heading">Cashier vs NBP</h2>
           <p className="muted">
             Cashier rates use four implied decimals; NBP uses PLN per unit. Read-only comparison.
+            {nbp.status === 'loading' && nbp.data
+              ? ' Refreshing the NBP reference; showing the previous table.'
+              : nbp.status === 'error'
+                ? ' NBP refresh failed; showing the previous table.'
+                : ''}
             {!readFresh && hasCashier
               ? readTime
                 ? ' Showing the last complete read; differences are unavailable until the cashier is read again.'
@@ -78,7 +83,7 @@ export function RateComparison({
 
       {!hasCashier ? (
         <p className="empty">Read foreign slots to compare the cashier rates.</p>
-      ) : nbp.status !== 'ready' ? (
+      ) : !nbp.data ? (
         <p className="empty">NBP reference is not ready.</p>
       ) : (
         <>

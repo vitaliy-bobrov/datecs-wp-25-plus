@@ -2,9 +2,9 @@ import { errorMessage, type NbpSnapshot } from '../domain/nbp';
 import { formatTimestamp } from './log-view';
 
 export type NbpState =
-  | { status: 'loading' }
+  | { status: 'loading'; data?: NbpSnapshot }
   | { status: 'ready'; data: NbpSnapshot }
-  | { status: 'error'; message: string };
+  | { status: 'error'; message: string; data?: NbpSnapshot };
 
 interface NbpPanelProps {
   state: NbpState;
@@ -12,6 +12,7 @@ interface NbpPanelProps {
 }
 
 export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
+  const data = state.data;
   return (
     <section className="card panel nbp" aria-labelledby="nbp-heading">
       <div className="card-heading panel-head">
@@ -20,7 +21,7 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
           <p className="muted">Table A · USD/EUR · previous business day · in-memory only</p>
         </div>
         <div className="button-row compact">
-          {state.status === 'ready' && state.data.stale ? (
+          {data?.stale ? (
             <span className="state state-stale" title="Older than seven calendar days">
               Stale
             </span>
@@ -28,19 +29,22 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
           <button
             type="button"
             className="button"
-            onClick={onRefresh}
-            disabled={state.status === 'loading'}
+            onClick={() => {
+              if (state.status === 'loading') return;
+              onRefresh();
+            }}
+            aria-disabled={state.status === 'loading'}
           >
-            {state.status === 'loading' ? 'Loading…' : 'Refresh'}
+            {state.status === 'loading' ? (state.data ? 'Refreshing…' : 'Loading…') : 'Refresh'}
           </button>
         </div>
       </div>
 
-      {state.status === 'loading' ? (
+      {state.status === 'loading' && !data ? (
         <p className="empty" aria-live="polite">
           Loading NBP table A…
         </p>
-      ) : state.status === 'error' ? (
+      ) : state.status === 'error' && !data ? (
         <div className="panel-body">
           <div className="nbp-error" role="alert">
             <p>{state.message || errorMessage(null)}</p>
@@ -49,21 +53,30 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
             </button>
           </div>
         </div>
-      ) : (
-        <div className="panel-body nbp-body" aria-live="polite">
+      ) : data ? (
+        <div
+          className="panel-body nbp-body"
+          aria-live="polite"
+          aria-busy={state.status === 'loading'}
+        >
+          {state.status === 'error' ? (
+            <p className="plan-warnings failure">
+              NBP refresh failed: {state.message || errorMessage(null)} Showing the previous table.
+            </p>
+          ) : null}
           <p className="nbp-meta">
-            Effective <strong>{state.data.table.effectiveDate}</strong>
+            Effective <strong>{data.table.effectiveDate}</strong>
             {' · '}
-            {state.data.ageDays} calendar day{state.data.ageDays === 1 ? '' : 's'} old
+            {data.ageDays} calendar day{data.ageDays === 1 ? '' : 's'} old
             {' · '}
             stale after 7 days
-            {state.data.table.no ? ` · NBP ${state.data.table.no}` : ''}
+            {data.table.no ? ` · NBP ${data.table.no}` : ''}
             {' · '}
-            fetched {formatTimestamp(state.data.fetchedAt)}
+            fetched {formatTimestamp(data.fetchedAt)}
           </p>
           <dl className="rates">
             {(['USD', 'EUR'] as const).map((code) => {
-              const rate = state.data.table.rates.find((item) => item.code === code);
+              const rate = data.table.rates.find((item) => item.code === code);
               return (
                 <div key={code}>
                   <dt>{code}</dt>
@@ -88,7 +101,7 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
             . Reference only; the cashier comparison uses read slot values when available.
           </p>
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

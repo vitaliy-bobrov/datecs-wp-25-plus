@@ -164,7 +164,6 @@ export function App({ session }: AppProps) {
   const [pendingUpdate, setPendingUpdate] = useState<UpdateTargets | null>(null);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
-  const [idleAcknowledged, setIdleAcknowledged] = useState(false);
   const [interruption, setInterruption] = useState<InterruptionMarker | null>(() =>
     readInterruptionMarker(),
   );
@@ -178,12 +177,18 @@ export function App({ session }: AppProps) {
   }, [writeInFlight]);
 
   useEffect(() => {
-    const sync = () => setInterruption(readInterruptionMarker());
+    const sync = () =>
+      setInterruption((current) => {
+        const marker = readInterruptionMarker();
+        return current?.kind === marker?.kind && current?.startedAt === marker?.startedAt
+          ? current
+          : marker;
+      });
     sync();
     if (typeof window === 'undefined') return;
     window.addEventListener('storage', sync);
     return () => window.removeEventListener('storage', sync);
-  }, [snapshot.phase, snapshot.updateState, snapshot.updateResult, snapshot.writeTest]);
+  });
 
   useEffect(() => {
     void session.acquireLock();
@@ -194,11 +199,15 @@ export function App({ session }: AppProps) {
   }, [updateOpen]);
 
   const loadNbp = useCallback(async () => {
-    setNbp({ status: 'loading' });
+    setNbp((previous) => ({ status: 'loading', data: previous.data }));
     try {
       setNbp({ status: 'ready', data: await nbpClient.fetchPreviousRates() });
     } catch (error) {
-      setNbp({ status: 'error', message: errorMessage(error) });
+      setNbp((previous) => ({
+        status: 'error',
+        message: errorMessage(error),
+        data: previous.data,
+      }));
     }
   }, []);
 
@@ -288,46 +297,29 @@ export function App({ session }: AppProps) {
   };
 
   const runReads = async (): Promise<void> => {
-    if (session.getSnapshot().phase !== 'connected') {
-      setIdleAcknowledged(false);
-      return;
-    }
+    if (session.getSnapshot().phase !== 'connected') return;
     await session.runPreflight();
-    if (session.getSnapshot().captureState !== 'captured') {
-      setIdleAcknowledged(false);
-      return;
-    }
+    if (session.getSnapshot().captureState !== 'captured') return;
     await session.runReadForeign();
-    if (session.getSnapshot().foreignReadState !== 'read') {
-      setIdleAcknowledged(false);
-      return;
-    }
+    if (session.getSnapshot().foreignReadState !== 'read') return;
     await session.runReadConverter();
-    if (session.getSnapshot().converterReadState !== 'read') {
-      setIdleAcknowledged(false);
-      return;
-    }
+    if (session.getSnapshot().converterReadState !== 'read') return;
     setInterruption(null);
   };
 
   const connect = async (kind: TransportKind) => {
-    if (!idleAcknowledged || !canConnect || !supportsWebSerial()) return;
+    if (!canConnect || !supportsWebSerial()) return;
     await session.connect(kind);
-    if (session.getSnapshot().phase !== 'connected') {
-      setIdleAcknowledged(false);
-      return;
-    }
+    if (session.getSnapshot().phase !== 'connected') return;
     await runReads();
   };
 
   const readCashier = async () => {
-    if (!idleAcknowledged) return;
     if (session.getSnapshot().phase !== 'connected' || deviceBusy) return;
     await runReads();
   };
 
   const disconnect = async () => {
-    setIdleAcknowledged(false);
     await session.disconnect();
   };
 
@@ -338,12 +330,16 @@ export function App({ session }: AppProps) {
     print: snapshot.converterRead?.printFlag,
   } satisfies Record<WriteTarget, string | undefined>;
 
-  const nbpStale = nbp.status === 'ready' && nbp.data.stale;
+  const nbpStale = nbp.data?.stale ?? false;
+  const nbpError = nbp.status === 'error';
+  const nbpLoading = nbp.status === 'loading';
   const writesBlocked = writeInterrupted;
   const updateBlocked =
     writesBlocked ||
     !readFresh ||
     nbpStale ||
+    nbpError ||
+    nbpLoading ||
     snapshot.updateState === 'failed' ||
     snapshot.updateState === 'updating' ||
     snapshot.writeTestState === 'writing';
@@ -357,7 +353,7 @@ export function App({ session }: AppProps) {
 
   const confirmUpdate = () => {
     const targets = pendingUpdate;
-    if (!targets || updateBlocked || !identityConfirmed || !idleAcknowledged) return;
+    if (!targets || updateBlocked || !identityConfirmed) return;
     setUpdateOpen(false);
     setPendingUpdate(null);
     void session.runFullUpdate(targets);
@@ -379,7 +375,7 @@ export function App({ session }: AppProps) {
   };
 
   const confirmWriteTest = () => {
-    if (writesBlocked || !idleAcknowledged || deviceBusy) return;
+    if (writesBlocked || deviceBusy) return;
     const target = writeTarget;
     setWriteOpen(false);
     setWriteTarget(null);
@@ -464,19 +460,9 @@ export function App({ session }: AppProps) {
 
             <div className="panel-body connection-body">
               <div>
-                <label className="checkline idle-gate">
-                  <input
-                    type="checkbox"
-                    checked={idleAcknowledged}
-                    onChange={(event) => setIdleAcknowledged(event.target.checked)}
-                  />
-                  <span>Cashier is idle and no sale is open</span>
-                </label>
-                <p className="hint" id="idle-gate-hint">
-                  Connect and Read stay disabled until you confirm the cashier is idle.
-                  {!idleAcknowledged && snapshot.phase === 'connected' && readFailed
-                    ? ' The confirmation was cleared after the failed read; tick it again to retry.'
-                    : ''}
+                <p className="hint">
+                  Connecting starts the preflight and currency reads automatically. The cashier
+                  rejects writes while a sale or report is open.
                 </p>
               </div>
 
@@ -488,8 +474,7 @@ export function App({ session }: AppProps) {
                       type="button"
                       className="button primary"
                       onClick={() => void connect('webserial')}
-                      aria-disabled={!canConnect || !idleAcknowledged || !supportsWebSerial()}
-                      aria-describedby="idle-gate-hint"
+                      aria-disabled={!canConnect || !supportsWebSerial()}
                       title={
                         supportsWebSerial()
                           ? 'Select the cashier with Web Serial'
@@ -502,10 +487,7 @@ export function App({ session }: AppProps) {
                       type="button"
                       className="button"
                       onClick={() => void readCashier()}
-                      aria-disabled={
-                        !idleAcknowledged || snapshot.phase !== 'connected' || deviceBusy
-                      }
-                      aria-describedby="idle-gate-hint"
+                      aria-disabled={snapshot.phase !== 'connected' || deviceBusy}
                     >
                       {readFailed ? 'Read again' : 'Read cashier'}
                     </button>
@@ -591,28 +573,31 @@ export function App({ session }: AppProps) {
           </section>
 
           <div className="workspace">
-            <RateComparison
-              nbp={nbp}
-              cashier={cashierRates}
-              readFresh={readFresh}
-              refreshing={refreshing}
-              readAt={snapshot.lastRead?.at}
-            />
+            <div className="workspace-left">
+              <RateComparison
+                nbp={nbp}
+                cashier={cashierRates}
+                readFresh={readFresh}
+                refreshing={refreshing}
+                readAt={snapshot.lastRead?.at}
+              />
+              <UpdatePreview
+                foreign={displayedForeign}
+                converter={displayedConverter}
+                nbp={nbp}
+                readFresh={readFresh}
+                readAt={snapshot.lastRead?.at}
+                updateState={snapshot.updateState}
+                updateResult={snapshot.updateResult}
+                interrupted={writeInterrupted}
+                writeBusy={
+                  snapshot.updateState === 'updating' || snapshot.writeTestState === 'writing'
+                }
+                onRequestUpdate={requestUpdate}
+              />
+            </div>
             <NbpPanel state={nbp} onRefresh={() => void loadNbp()} />
           </div>
-
-          <UpdatePreview
-            foreign={displayedForeign}
-            converter={displayedConverter}
-            nbp={nbp}
-            readFresh={readFresh}
-            readAt={snapshot.lastRead?.at}
-            updateState={snapshot.updateState}
-            updateResult={snapshot.updateResult}
-            interrupted={writeInterrupted}
-            writeBusy={snapshot.updateState === 'updating' || snapshot.writeTestState === 'writing'}
-            onRequestUpdate={requestUpdate}
-          />
         </div>
 
         <details className="diag" open={writesBlocked || undefined}>
@@ -843,12 +828,12 @@ export function App({ session }: AppProps) {
         title="Apply NBP update?"
         confirmLabel="Update cashier"
         confirmTone="primary"
-        confirmDisabled={writesBlocked || !identityConfirmed || !idleAcknowledged}
+        confirmDisabled={updateBlocked || !identityConfirmed}
         confirmReason={
           writeInterrupted
             ? 'A previous write was interrupted; read the cashier completely before updating.'
-            : !idleAcknowledged
-              ? 'Tick the idle acknowledgement before writing.'
+            : updateBlocked
+              ? 'The update gate is not ready; retry the read or NBP reference.'
               : 'Confirm this is the cashier at the till to enable Update cashier.'
         }
         onConfirm={confirmUpdate}
@@ -938,11 +923,11 @@ export function App({ session }: AppProps) {
         title={`Run ${writeTargetLabel(writeTarget)} test?`}
         confirmLabel="Run test"
         confirmTone="primary"
-        confirmDisabled={writesBlocked || !idleAcknowledged}
+        confirmDisabled={writesBlocked}
         confirmReason={
           writeInterrupted
             ? 'A previous write was interrupted; read the cashier completely before testing.'
-            : 'Tick the idle acknowledgement before writing.'
+            : undefined
         }
         onConfirm={confirmWriteTest}
         onCancel={() => {

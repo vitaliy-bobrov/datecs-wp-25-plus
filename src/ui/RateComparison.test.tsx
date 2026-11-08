@@ -41,6 +41,18 @@ describe('RateComparison', () => {
     expect(html).toContain('+0.0030');
   });
 
+  it('keeps the comparison table with retained NBP data during refresh', () => {
+    const html = renderToStaticMarkup(
+      <RateComparison
+        nbp={{ status: 'loading', data: table }}
+        cashier={{ USD: '39251', EUR: '43955' }}
+        readFresh
+      />,
+    );
+    expect(html).toContain('Refreshing the NBP reference');
+    expect(html).toContain('3.9321');
+    expect(html).toContain('−0.0070');
+  });
   it('labels partial values without pretending they are a complete read', () => {
     const html = renderToStaticMarkup(
       <RateComparison nbp={ready} cashier={{ USD: '39251', EUR: '43955' }} readFresh={false} />,

@@ -65,13 +65,13 @@ export function UpdatePreview({
     currentFlag !== undefined && (printTouched.current || seededFlag === currentFlag);
 
   const nbpRates = useMemo(() => {
-    if (nbp.status !== 'ready') return {};
+    if (!nbp.data) return {};
     const rates: Partial<Record<CurrencyCode, string>> = {};
     for (const rate of nbp.data.table.rates) {
       if (rate.code === 'USD' || rate.code === 'EUR') rates[rate.code] = rate.mid;
     }
     return rates;
-  }, [nbp]);
+  }, [nbp.data]);
 
   const plan = useMemo(
     () =>
@@ -115,7 +115,7 @@ export function UpdatePreview({
         : `${printCurrent} → ${printTarget}`;
   const currentLabel =
     readFresh && !interrupted ? 'Cashier now' : readAt ? 'Last read' : 'Partial read';
-  const staleNbp = nbp.status === 'ready' && nbp.data.stale;
+  const staleNbp = nbp.data?.stale ?? false;
   const valuesReady =
     plan !== null &&
     plan.usd.current !== null &&
@@ -136,30 +136,40 @@ export function UpdatePreview({
               tone: 'failed',
               message: 'A write is in progress. Wait for it to finish before reviewing an update.',
             }
-          : staleNbp
+          : nbp.status === 'loading' && nbp.data
             ? {
-                tone: 'stale',
-                message:
-                  'NBP table is stale (older than seven calendar days). Refresh the reference before updating.',
+                tone: 'unavailable',
+                message: 'NBP reference is refreshing. Wait for it before updating.',
               }
-            : updateState === 'failed'
+            : nbp.status === 'error'
               ? {
                   tone: 'failed',
-                  message: 'The last update failed. Read the cashier again before retrying.',
+                  message: 'NBP refresh failed. Retry the reference before updating.',
                 }
-              : plan.converter === undefined
+              : staleNbp
                 ? {
-                    tone: 'unavailable',
+                    tone: 'stale',
                     message:
-                      'The converter record is unavailable. Read the cashier again before updating.',
+                      'NBP table is stale (older than seven calendar days). Refresh the reference before updating.',
                   }
-                : !valuesReady
+                : updateState === 'failed'
                   ? {
-                      tone: 'unavailable',
-                      message:
-                        'A current rate or print flag is unavailable. Read the cashier again before updating.',
+                      tone: 'failed',
+                      message: 'The last update failed. Read the cashier again before retrying.',
                     }
-                  : null;
+                  : plan.converter === undefined
+                    ? {
+                        tone: 'unavailable',
+                        message:
+                          'The converter record is unavailable. Read the cashier again before updating.',
+                      }
+                    : !valuesReady
+                      ? {
+                          tone: 'unavailable',
+                          message:
+                            'A current rate or print flag is unavailable. Read the cashier again before updating.',
+                        }
+                      : null;
   const canReview =
     !interrupted &&
     !writeBusy &&
@@ -172,10 +182,7 @@ export function UpdatePreview({
     updateState !== 'updating' &&
     onRequestUpdate !== undefined;
   const resultNotice = updateResult ? (
-    <p
-      className={updateResult.outcome === 'verified' ? 'hint' : 'plan-warnings failure'}
-      role={undefined}
-    >
+    <p className={updateResult.outcome === 'verified' ? 'hint' : 'plan-warnings failure'}>
       {updateResult.outcome === 'verified'
         ? 'Update verified; all four readbacks matched.'
         : updateResult.outcome === 'not-written'
@@ -225,7 +232,7 @@ export function UpdatePreview({
         ) : null}
       </div>
 
-      {nbp.status !== 'ready' ? (
+      {!nbp.data ? (
         <>
           <p className="empty">NBP reference is not ready.</p>
           {readGate}
