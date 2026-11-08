@@ -24,8 +24,13 @@ interface UpdatePreviewProps {
   readAt?: string;
   updateState: 'idle' | 'updating' | 'verified' | 'failed';
   updateResult?: FullUpdateResult;
+  interrupted?: boolean;
+  writeBusy?: boolean;
   onRequestUpdate: (targets: UpdateTargets) => void;
 }
+
+const INTERRUPTED_MESSAGE =
+  'A write was interrupted; the cashier state is unknown. Read the cashier completely before updating.';
 
 export function UpdatePreview({
   foreign,
@@ -35,6 +40,8 @@ export function UpdatePreview({
   readAt,
   updateState,
   updateResult,
+  interrupted = false,
+  writeBusy = false,
   onRequestUpdate,
 }: UpdatePreviewProps) {
   const currentFlag = converter?.printFlag;
@@ -106,7 +113,8 @@ export function UpdatePreview({
       : printCurrent === printTarget
         ? 'No change'
         : `${printCurrent} → ${printTarget}`;
-  const currentLabel = readFresh ? 'Cashier now' : readAt ? 'Last read' : 'Partial read';
+  const currentLabel =
+    readFresh && !interrupted ? 'Cashier now' : readAt ? 'Last read' : 'Partial read';
   const staleNbp = nbp.status === 'ready' && nbp.data.stale;
   const valuesReady =
     plan !== null &&
@@ -118,31 +126,43 @@ export function UpdatePreview({
   const reviewGate: { tone: 'stale' | 'failed' | 'unavailable'; message: string } | null =
     !readFresh || !plan
       ? null
-      : staleNbp
+      : interrupted
         ? {
-            tone: 'stale',
-            message:
-              'NBP table is stale (older than seven calendar days). Refresh the reference before updating.',
+            tone: 'failed',
+            message: INTERRUPTED_MESSAGE,
           }
-        : updateState === 'failed'
+        : writeBusy
           ? {
               tone: 'failed',
-              message: 'The last update failed. Read the cashier again before retrying.',
+              message: 'A write is in progress. Wait for it to finish before reviewing an update.',
             }
-          : plan.converter === undefined
+          : staleNbp
             ? {
-                tone: 'unavailable',
+                tone: 'stale',
                 message:
-                  'The converter record is unavailable. Read the cashier again before updating.',
+                  'NBP table is stale (older than seven calendar days). Refresh the reference before updating.',
               }
-            : !valuesReady
+            : updateState === 'failed'
               ? {
-                  tone: 'unavailable',
-                  message:
-                    'A current rate or print flag is unavailable. Read the cashier again before updating.',
+                  tone: 'failed',
+                  message: 'The last update failed. Read the cashier again before retrying.',
                 }
-              : null;
+              : plan.converter === undefined
+                ? {
+                    tone: 'unavailable',
+                    message:
+                      'The converter record is unavailable. Read the cashier again before updating.',
+                  }
+                : !valuesReady
+                  ? {
+                      tone: 'unavailable',
+                      message:
+                        'A current rate or print flag is unavailable. Read the cashier again before updating.',
+                    }
+                  : null;
   const canReview =
+    !interrupted &&
+    !writeBusy &&
     readFresh &&
     plan?.hasChanges === true &&
     plan.converter !== undefined &&
@@ -154,7 +174,7 @@ export function UpdatePreview({
   const resultNotice = updateResult ? (
     <p
       className={updateResult.outcome === 'verified' ? 'hint' : 'plan-warnings failure'}
-      role={updateResult.outcome === 'verified' ? undefined : 'alert'}
+      role={undefined}
     >
       {updateResult.outcome === 'verified'
         ? 'Update verified; all four readbacks matched.'
@@ -168,10 +188,12 @@ export function UpdatePreview({
 
   const readGate = !readFresh ? (
     <div className="panel-body">
-      <p className="hint" id={readGateReasonId}>
-        {readAt
-          ? 'Cashier records are not current. Read again before updating; the values above are the last complete read.'
-          : 'Cashier records are incomplete. Read again before updating.'}
+      <p className={interrupted ? 'plan-warnings failure' : 'hint'} id={readGateReasonId}>
+        {interrupted
+          ? INTERRUPTED_MESSAGE
+          : readAt
+            ? 'Cashier records are not current. Read again before updating; the values above are the last complete read.'
+            : 'Cashier records are incomplete. Read again before updating.'}
       </p>
       <div className="button-row update-actions">
         <button
@@ -196,6 +218,11 @@ export function UpdatePreview({
             verifies all four readbacks, and restores the backup if anything fails.
           </p>
         </div>
+        {interrupted ? (
+          <div className="panel-badges">
+            <span className="state state-interrupted">UPDATE INTERRUPTED</span>
+          </div>
+        ) : null}
       </div>
 
       {nbp.status !== 'ready' ? (
@@ -348,10 +375,12 @@ export function UpdatePreview({
           </p>
 
           {!readFresh ? (
-            <p className="hint" id={readGateReasonId}>
-              {readAt
-                ? 'Cashier records are not current. Read again before updating; the values above are the last complete read.'
-                : 'Cashier records are incomplete. Read again before updating.'}
+            <p className={interrupted ? 'plan-warnings failure' : 'hint'} id={readGateReasonId}>
+              {interrupted
+                ? INTERRUPTED_MESSAGE
+                : readAt
+                  ? 'Cashier records are not current. Read again before updating; the values above are the last complete read.'
+                  : 'Cashier records are incomplete. Read again before updating.'}
             </p>
           ) : null}
 

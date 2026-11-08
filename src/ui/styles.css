@@ -239,7 +239,8 @@ summary:focus-visible,
 }
 
 .lamp-error,
-.lamp-failed {
+.lamp-failed,
+.lamp-interrupted {
   background: var(--danger-text);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger-text) 16%, transparent);
 }
@@ -329,6 +330,12 @@ summary:focus-visible,
 
 .lcd-state-failure {
   color: var(--lcd-failure);
+}
+
+@media (max-width: 767px) {
+  .lcd-state {
+    font-size: 22px;
+  }
 }
 
 .lcd-rates {
@@ -468,7 +475,8 @@ summary:focus-visible,
 .state-updating,
 .state-capture-only,
 .state-error,
-.state-failed {
+.state-failed,
+.state-interrupted {
   color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger-text) 36%, var(--border));
 }

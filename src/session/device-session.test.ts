@@ -11,7 +11,13 @@ import type {
 import { TransportError } from '../ports/transport';
 import { READ_LOCAL_FRAMES } from '../protocol/read-currencies';
 import { type2Response } from '../test/frames';
+import { MemoryStorage } from '../test/storage';
 import { DeviceSession } from './device-session';
+import {
+  createInterruptionStore,
+  type InterruptionMarker,
+  type InterruptionStore,
+} from './interruption-marker';
 
 class FixedClock {
   nowIso(): string {
@@ -50,6 +56,7 @@ class FakeTransport implements DeviceTransport {
   written: Uint8Array[] = [];
   rx: Uint8Array[] = [];
   writeError: Error | null = null;
+  onWrite?: () => void;
 
   async open(): Promise<TransportInfo> {
     this.opened = true;
@@ -61,6 +68,7 @@ class FakeTransport implements DeviceTransport {
   }
 
   async write(bytes: Uint8Array): Promise<void> {
+    this.onWrite?.();
     if (this.writeError) throw this.writeError;
     this.written.push(bytes);
   }
@@ -356,7 +364,9 @@ describe('DeviceSession', () => {
   it('resends once after NAK and captures the retry response', async () => {
     const lock = new FakeLock();
     const selector = new FakeSelector();
-    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock, 0);
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock, {
+      retryDelayMs: 0,
+    });
 
     await session.acquireLock();
     await session.connect();
@@ -376,7 +386,9 @@ describe('DeviceSession', () => {
     const selector: TransportSelector = {
       select: async () => new SimulatorTransport(),
     };
-    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock, 0);
+    const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), lock, {
+      retryDelayMs: 0,
+    });
 
     await session.acquireLock();
     await session.connect('simulator');
@@ -895,5 +907,277 @@ describe('DeviceSession', () => {
 
     expect(session.getSnapshot().lockState).toBe('unavailable');
     expect(session.getSnapshot().error?.code).toBe('locks-unavailable');
+  });
+});
+
+function markerStore(): {
+  storage: MemoryStorage;
+  interruptions: ReturnType<typeof createInterruptionStore>;
+} {
+  const storage = new MemoryStorage();
+  return { storage, interruptions: createInterruptionStore(() => storage) };
+}
+
+async function connectedSession(interruptions: InterruptionStore): Promise<{
+  selector: FakeSelector;
+  session: DeviceSession;
+  transport: FakeTransport;
+}> {
+  const selector = new FakeSelector();
+  const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock(), {
+    interruptions,
+  });
+  await session.acquireLock();
+  await session.connect();
+  const transport = selector.last;
+  if (!transport) throw new Error('Fake transport was not created.');
+  return { selector, session, transport };
+}
+
+function queueVerifiedUpdate(transport: FakeTransport): void {
+  transport.rx.push(
+    type2Response('39251', '2'),
+    type2Response('43955', '3'),
+    type2Response('39251', '4'),
+    type2Response('1', '5'),
+    type2Response('', '6'),
+    type2Response('', '7'),
+    type2Response('', '8'),
+    type2Response('', '9'),
+    type2Response('39321', ':'),
+    type2Response('43925', ';'),
+    type2Response('39321', '<'),
+    type2Response('1', '='),
+  );
+}
+
+const updateTargets = {
+  usdRaw: 39321,
+  eurRaw: 43925,
+  converterRaw: 39321,
+  printFlag: '1' as const,
+};
+
+describe('DeviceSession interruption marker', () => {
+  it('writes the marker before the first update write and clears it when verified', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    queueVerifiedUpdate(transport);
+    const observed: (InterruptionMarker | null)[] = [];
+    transport.onWrite = () => observed.push(interruptions.read());
+
+    await session.runFullUpdate(updateTargets);
+
+    expect(session.getSnapshot().updateState).toBe('verified');
+    expect(observed).toHaveLength(12);
+    expect(observed.slice(0, 4)).toEqual([null, null, null, null]);
+    expect(observed[4]).toMatchObject({ version: 1, kind: 'update' });
+    expect(observed[4]?.startedAt).toEqual(expect.any(String));
+    expect(interruptions.read()).toBeNull();
+  });
+
+  it('clears the marker when a failed update restores the original records', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('43955', '3'),
+      type2Response('39251', '4'),
+      type2Response('1', '5'),
+      type2Response('', '6'),
+      type2Response('', '7'),
+      type2Response('', '8'),
+      type2Response('', '9'),
+      type2Response('39322', ':'),
+      type2Response('43925', ';'),
+      type2Response('39321', '<'),
+      type2Response('1', '='),
+      type2Response('', '>'),
+      type2Response('', '?'),
+      type2Response('', '@'),
+      type2Response('', 'A'),
+      type2Response('39251', 'B'),
+      type2Response('43955', 'C'),
+      type2Response('39251', 'D'),
+      type2Response('1', 'E'),
+    );
+
+    await session.runFullUpdate(updateTargets);
+
+    expect(session.getSnapshot().updateResult).toMatchObject({
+      outcome: 'restored',
+      restored: true,
+    });
+    expect(interruptions.read()).toBeNull();
+  });
+
+  it('refuses an update while a persisted interruption marker exists', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+    const writesBefore = transport.written.length;
+    interruptions.write({ kind: 'update', startedAt: '2026-11-08T09:00:00.000Z' });
+
+    await session.runFullUpdate(updateTargets);
+
+    expect(session.getSnapshot().updateState).toBe('idle');
+    expect(transport.written).toHaveLength(writesBefore);
+  });
+
+  it('retains the marker when restore does not verify', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('43955', '3'),
+      type2Response('39251', '4'),
+      type2Response('1', '5'),
+      type2Response('', '6'),
+      type2Response('', '7'),
+      type2Response('', '8'),
+      type2Response('', '9'),
+      type2Response('39322', ':'),
+      type2Response('43925', ';'),
+      type2Response('39321', '<'),
+      type2Response('1', '='),
+    );
+
+    await session.runFullUpdate(updateTargets);
+
+    expect(session.getSnapshot().updateResult).toMatchObject({
+      outcome: 'restore-failed',
+      restored: false,
+    });
+    expect(interruptions.read()).toMatchObject({ version: 1, kind: 'update' });
+  });
+
+  it('clears the marker when the update aborts before writing', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('43955', '3'),
+      type2Response('39251', '4'),
+      type2Response('0', '5'),
+    );
+
+    await session.runFullUpdate(updateTargets);
+
+    expect(session.getSnapshot().updateResult).toMatchObject({ outcome: 'not-written' });
+    expect(interruptions.read()).toBeNull();
+  });
+
+  it('writes the marker before the first write test write and clears it when verified', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('', '3'),
+      type2Response('39252', '4'),
+      type2Response('', '5'),
+      type2Response('39251', '6'),
+    );
+    const observed: (InterruptionMarker | null)[] = [];
+    transport.onWrite = () => observed.push(interruptions.read());
+
+    await session.runRateWriteTest();
+
+    expect(session.getSnapshot().writeTestState).toBe('verified');
+    expect(observed[0]).toBeNull();
+    expect(observed[1]).toMatchObject({ version: 1, kind: 'write-test', field: 'slot0Rate' });
+    expect(interruptions.read()).toBeNull();
+  });
+
+  it('retains the marker when a write test restore does not verify', async () => {
+    const { interruptions } = markerStore();
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    transport.rx.push(
+      type2Response('39251', '2'),
+      type2Response('', '3'),
+      type2Response('39252', '4'),
+    );
+
+    await session.runRateWriteTest();
+
+    expect(session.getSnapshot().writeTestState).toBe('failed');
+    expect(session.getSnapshot().writeTest).toMatchObject({ restored: false });
+    expect(interruptions.read()).toMatchObject({
+      version: 1,
+      kind: 'write-test',
+      field: 'slot0Rate',
+    });
+  });
+
+  it('clears the marker after a complete read', async () => {
+    const { interruptions } = markerStore();
+    interruptions.write({ kind: 'update', startedAt: '2026-11-08T09:00:00.000Z' });
+    expect(interruptions.read()).not.toBeNull();
+
+    const { session, transport } = await connectedSession(interruptions);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    expect(session.getSnapshot().converterReadState).toBe('read');
+    expect(interruptions.read()).toBeNull();
+  });
+
+  it('retains the marker when the read is not complete', async () => {
+    const { interruptions } = markerStore();
+    interruptions.write({ kind: 'update', startedAt: '2026-11-08T09:00:00.000Z' });
+
+    const { session, transport } = await connectedSession(interruptions);
+    transport.rx.push(SIMULATOR_PREFLIGHT_RESPONSE, ...localResponses);
+    queueForeign(transport);
+    transport.rx.push(type2Response('Konwerter', '/'), type2Response('39251', '0'));
+
+    await session.runPreflight();
+    await session.runReadLocal();
+    await session.runReadForeign();
+    await session.runReadConverter();
+
+    expect(session.getSnapshot().converterReadState).toBe('failed');
+    expect(interruptions.read()).not.toBeNull();
+  });
+});
+
+describe('DeviceSession interruption storage failure', () => {
+  it('continues the update when marker persistence fails', async () => {
+    const throwing: InterruptionStore = {
+      read: () => null,
+      write: () => {
+        throw new Error('storage blocked');
+      },
+      clear: () => {
+        throw new Error('storage blocked');
+      },
+    };
+    const { session, transport } = await connectedSession(throwing);
+    queueReadFlow(transport);
+    await runReadFlow(session);
+    queueVerifiedUpdate(transport);
+
+    await session.runFullUpdate(updateTargets);
+
+    expect(session.getSnapshot().updateState).toBe('verified');
+    expect(session.getSnapshot().updateResult?.outcome).toBe('verified');
   });
 });

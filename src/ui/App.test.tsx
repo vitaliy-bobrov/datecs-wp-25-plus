@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
+import { INTERRUPTION_MARKER_KEY } from '../session/interruption-marker';
+import { MemoryStorage } from '../test/storage';
 import { App } from './App';
 
 const base: SessionSnapshot = {
@@ -59,6 +61,10 @@ afterAll(() => {
   } else {
     Reflect.deleteProperty(globalThis.navigator, 'serial');
   }
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
 });
 
 describe('App read lifecycle', () => {
@@ -195,5 +201,102 @@ describe('App read lifecycle', () => {
     expect(html).toContain('Could not read the cashier.');
     expect(html).toContain('Read foreign slots to compare the cashier rates.');
     expect(html).not.toContain('Last read');
+  });
+
+  it('shows UPDATE INTERRUPTED from a persisted marker and blocks every write', () => {
+    const storage = new MemoryStorage();
+    storage.setItem(
+      INTERRUPTION_MARKER_KEY,
+      JSON.stringify({
+        version: 1,
+        kind: 'update',
+        startedAt: '2026-11-07T10:00:00.000Z',
+      }),
+    );
+    vi.stubGlobal('localStorage', storage);
+
+    const html = renderToStaticMarkup(<App session={sessionFor(completeRead)} />);
+
+    expect(html).toContain('UPDATE INTERRUPTED');
+    expect(html).toContain(
+      'An update was interrupted; the cashier state is unknown. Read the cashier completely before writing again.',
+    );
+    expect(html).toContain('Writes and write tests stay blocked');
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Update cashier<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Run test<\/button>/);
+  });
+
+  it('disables the competing keys while a full update is writing', () => {
+    const html = renderToStaticMarkup(
+      <App session={sessionFor({ ...completeRead, updateState: 'updating' })} />,
+    );
+
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Disconnect<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Clear<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Copy text<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
+    expect(html).toContain('class="state state-updating"');
+  });
+
+  it('disables the competing keys while a write test is writing', () => {
+    const html = renderToStaticMarkup(
+      <App session={sessionFor({ ...completeRead, writeTestState: 'writing' })} />,
+    );
+
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Disconnect<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Clear<\/button>/);
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Writing…<\/button>/);
+    expect(html).toContain('class="state state-writing"');
+  });
+
+  it('blocks write tests after a write test restore failure until a complete read', () => {
+    const html = renderToStaticMarkup(
+      <App
+        session={sessionFor({
+          ...completeRead,
+          writeTestState: 'failed',
+          writeTest: {
+            field: 'slot0Rate',
+            original: '39251',
+            temporary: '39252',
+            temporaryReadback: '39252',
+            restored: false,
+          },
+        })}
+      />,
+    );
+
+    expect(html).toContain('UPDATE INTERRUPTED');
+    expect(html).toContain(
+      'Writes and write tests stay blocked until a complete read clears the interrupted write.',
+    );
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Run test<\/button>/);
+    expect(html).toContain('A previous write was interrupted; read the cashier completely');
+  });
+
+  it('blocks write tests after a restore-failed update until a complete read', () => {
+    const html = renderToStaticMarkup(
+      <App
+        session={sessionFor({
+          ...completeRead,
+          updateState: 'failed',
+          updateResult: {
+            backups: { usd: '39251', eur: '43955', converter: '39251', printFlag: '1' },
+            targets: { usdRaw: 39321, eurRaw: 43925, converterRaw: 39321, printFlag: '1' },
+            outcome: 'restore-failed',
+            restored: false,
+          },
+        })}
+      />,
+    );
+
+    expect(html).toContain('UPDATE INTERRUPTED');
+    expect(html).toContain(
+      'Writes and write tests stay blocked until a complete read clears the interrupted write.',
+    );
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Run test<\/button>/);
   });
 });

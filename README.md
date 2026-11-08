@@ -35,6 +35,8 @@ Hardware:
 3. Download the JSONL and/or text log.
 4. Confirm the read records. No update or single-field write is automatic; both require explicit confirmation, and the update dialog also requires physical-cashier identity confirmation.
 
+During an update or write test the console disables competing keys and asks the browser to confirm leaving the page. It writes a small versioned marker before the first mutating frame. If the page is reloaded during that window, the next load shows **UPDATE INTERRUPTED**, keeps reads available, and blocks every write until a complete read succeeds; the in-memory backup is gone after reload, so the marker never retries the write. A restore that cannot be verified keeps the marker through the same-session FAILED state.
+
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
 ```text

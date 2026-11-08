@@ -24,6 +24,7 @@ export function stateLabel(value: string): string {
     writing: 'Writing',
     updating: 'Updating',
     verified: 'Verified',
+    interrupted: 'UPDATE INTERRUPTED',
   };
   return labels[value] ?? value;
 }

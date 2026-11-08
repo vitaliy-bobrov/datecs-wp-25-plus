@@ -177,4 +177,35 @@ describe('UpdatePreview', () => {
     );
     expect(html).toMatch(/aria-describedby="[^"]+"/);
   });
+
+  it('blocks Review with the interrupted-write reason after a reload', () => {
+    const html = markup({ interrupted: true });
+    expect(html).toContain('UPDATE INTERRUPTED');
+    expect(html).toContain(
+      'A write was interrupted; the cashier state is unknown. Read the cashier completely before updating.',
+    );
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+    expect(html).toMatch(/aria-describedby="[^"]+"/);
+  });
+
+  it('keeps the interrupted reason when the read is also not current', () => {
+    const html = markup({
+      interrupted: true,
+      readFresh: false,
+      readAt: '2026-11-06T08:00:00.000Z',
+    });
+    expect(html).toContain('UPDATE INTERRUPTED');
+    expect(html).toContain(
+      'A write was interrupted; the cashier state is unknown. Read the cashier completely before updating.',
+    );
+    expect(html).toContain('Last read');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+  });
+
+  it('blocks Review with a reason while a write is in progress', () => {
+    const html = markup({ writeBusy: true });
+    expect(html).toContain('A write is in progress. Wait for it to finish before reviewing an update.');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+    expect(html).toMatch(/aria-describedby="[^"]+"/);
+  });
 });

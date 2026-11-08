@@ -26,6 +26,11 @@ import {
   parseReadResponse,
   READ_LOCAL_FRAMES,
 } from '../protocol/read-currencies';
+import {
+  createBrowserInterruptionStore,
+  type InterruptionKind,
+  type InterruptionStore,
+} from './interruption-marker';
 
 type SessionPhase = 'idle' | 'connecting' | 'connected' | 'error';
 type LockState = 'idle' | 'acquiring' | 'held' | 'in-use' | 'unavailable';
@@ -168,12 +173,24 @@ export class DeviceSession {
   private preflightGeneration = 0;
   private writeDelimiter = 0x32;
 
+  private readonly selector: TransportSelector;
+  private readonly capture: CaptureLog;
+  private readonly lock: DeviceLock;
+  private readonly retryDelayMs: number;
+  private readonly interruptions: InterruptionStore;
+
   constructor(
-    private readonly selector: TransportSelector,
-    private readonly capture: CaptureLog,
-    private readonly lock: DeviceLock,
-    private readonly retryDelayMs = 3000,
-  ) {}
+    selector: TransportSelector,
+    capture: CaptureLog,
+    lock: DeviceLock,
+    options: { retryDelayMs?: number; interruptions?: InterruptionStore } = {},
+  ) {
+    this.selector = selector;
+    this.capture = capture;
+    this.lock = lock;
+    this.retryDelayMs = options.retryDelayMs ?? 3000;
+    this.interruptions = options.interruptions ?? createBrowserInterruptionStore();
+  }
 
   getSnapshot = (): SessionSnapshot => this.snapshot;
 
@@ -350,6 +367,37 @@ export class DeviceSession {
       snapshot.writeTestState === 'writing' ||
       snapshot.updateState === 'updating'
     );
+  }
+
+  private markInterruption(kind: InterruptionKind, field?: string): void {
+    try {
+      const startedAt = new Date().toISOString();
+      this.interruptions.write({ kind, startedAt, field });
+      this.append({
+        kind: 'session',
+        transport: this.snapshot.transportKind ?? 'webserial',
+        message: 'Write interruption marker set',
+        detail: { kind, field, startedAt },
+      });
+    } catch {
+      return;
+    }
+  }
+
+  private clearInterruption(): void {
+    try {
+      const hadMarker = this.interruptions.read() !== null;
+      this.interruptions.clear();
+      if (hadMarker) {
+        this.append({
+          kind: 'session',
+          transport: this.snapshot.transportKind ?? 'webserial',
+          message: 'Write interruption marker cleared',
+        });
+      }
+    } catch {
+      return;
+    }
   }
 
   async runPreflight(): Promise<void> {
@@ -751,7 +799,13 @@ export class DeviceSession {
     }
 
     const foreignRead = this.snapshot.foreignRead;
-    if (!foreignRead) {
+    if (
+      !foreignRead ||
+      !foreignRead.slot0Rate ||
+      !foreignRead.slot1Rate ||
+      !converter.rate ||
+      !converter.printFlag
+    ) {
       this.set({ converterReadState: 'failed' });
       return;
     }
@@ -772,6 +826,7 @@ export class DeviceSession {
         at: this.captureTimestamp(),
       },
     });
+    this.clearInterruption();
   }
 
   private captureTimestamp(): string {
@@ -973,7 +1028,8 @@ export class DeviceSession {
       this.snapshot.readState !== 'read' ||
       this.snapshot.foreignReadState !== 'read' ||
       this.snapshot.converterReadState !== 'read' ||
-      this.snapshot.writeTestState === 'writing'
+      this.snapshot.writeTestState === 'writing' ||
+      this.interruptions.read() !== null
     ) {
       return;
     }
@@ -1074,6 +1130,7 @@ export class DeviceSession {
 
       temporaryAttempted = true;
       restored = false;
+      this.markInterruption('write-test', field);
       await sendWrite(writeTemporary, 'temporary value');
       temporaryReadback = await readValue(readTemporary, 'temporary value');
       if (temporaryReadback !== temporary) {
@@ -1104,6 +1161,7 @@ export class DeviceSession {
           restored: true,
         },
       });
+      this.clearInterruption();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (temporaryAttempted && !restored) {
@@ -1120,6 +1178,7 @@ export class DeviceSession {
           restored = false;
         }
       }
+      if (restored) this.clearInterruption();
       this.append({
         kind: 'error',
         code: 'unknown',
@@ -1172,7 +1231,8 @@ export class DeviceSession {
       this.snapshot.updateState === 'updating' ||
       !foreign ||
       !converter?.rate ||
-      (converter.printFlag !== '0' && converter.printFlag !== '1')
+      (converter.printFlag !== '0' && converter.printFlag !== '1') ||
+      this.interruptions.read() !== null
     ) {
       return;
     }
@@ -1307,6 +1367,7 @@ export class DeviceSession {
         detail: { backups, targets: values, ...environment },
       });
 
+      this.markInterruption('update');
       wrote = true;
       await writeAll(values);
       readbacks = await readAll();
@@ -1335,6 +1396,7 @@ export class DeviceSession {
         converterRead: updatedConverter,
         updateResult: { backups, targets, readbacks, outcome: 'verified', restored: true },
       });
+      this.clearInterruption();
       this.append({
         kind: 'info',
         transport: transportKind,
@@ -1386,6 +1448,7 @@ export class DeviceSession {
         errorMessage: message,
         detail: { backups, targets: values, readbacks, restored, ...environment },
       });
+      if (!wrote || restored) this.clearInterruption();
       this.set({
         updateState: 'failed',
         updateResult: {
