@@ -1105,12 +1105,37 @@ ul.plan-warnings {
 /* Diagnostics and logger -------------------------------------------------- */
 
 .diag {
+  interpolate-size: allow-keywords;
   border-top: 1px solid var(--border);
   background: color-mix(in srgb, var(--body) 72%, var(--body-raised));
 }
 
-.diag > summary {
+.disclosure-summary {
   display: flex;
+  width: 100%;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.disclosure-content {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 160ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.disclosure.is-open .disclosure-content {
+  grid-template-rows: 1fr;
+}
+
+.disclosure-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.diag > .disclosure-summary {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -1126,22 +1151,18 @@ ul.plan-warnings {
   cursor: pointer;
 }
 
-.diag > summary::-webkit-details-marker {
-  display: none;
-}
-
-.diag > summary::after {
+.diag > .disclosure-summary::after {
   content: "+";
   font-family: var(--font-mono);
   font-size: 16px;
   font-weight: 400;
 }
 
-.diag[open] > summary::after {
+.diag.is-open > .disclosure-summary::after {
   content: "\2212";
 }
 
-.diag > summary:focus-visible {
+.diag > .disclosure-summary:focus-visible {
   outline-offset: -4px;
 }
 
@@ -1254,16 +1275,26 @@ ul.plan-warnings {
 }
 
 .log-detail {
+  interpolate-size: allow-keywords;
   margin-top: 4px;
 }
 
-.log-detail summary {
+.log-detail .disclosure-summary {
+  width: auto;
   color: var(--ink-secondary);
   font-size: 12px;
   cursor: pointer;
 }
 
-.log-detail summary:focus-visible {
+.log-detail .disclosure-summary::after {
+  content: " +";
+}
+
+.log-detail.is-open .disclosure-summary::after {
+  content: " −";
+}
+
+.log-detail .disclosure-summary:focus-visible {
   outline-offset: -2px;
 }
 
@@ -1578,6 +1609,10 @@ ul.plan-warnings {
   .settle,
   .nbp-value-fade {
     animation: none;
+  }
+
+  .disclosure-content {
+    transition: none;
   }
 
   .refresh-spinner {

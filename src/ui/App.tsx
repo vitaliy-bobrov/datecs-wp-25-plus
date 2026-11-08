@@ -9,6 +9,7 @@ import type { TransportKind } from '../ports/transport';
 import type { DeviceSession, SessionSnapshot } from '../session/device-session';
 import { type InterruptionMarker, readInterruptionMarker } from '../session/interruption-marker';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Disclosure } from './Disclosure';
 import { captureDownload, downloadText } from './download';
 import { displayEntries, formatTimestamp, formatUsbIds, stateClass, stateLabel } from './log-view';
 import { NbpPanel, type NbpState } from './NbpPanel';
@@ -560,8 +561,7 @@ export function App({ session }: AppProps) {
           </div>
         </div>
 
-        <details className="diag">
-          <summary>Diagnostics · logger</summary>
+        <Disclosure className="diag" summary="Diagnostics · logger">
           <div className="diag-body">
             <section className="card panel logger" aria-labelledby="logger-heading">
               <div className="card-heading panel-head">
@@ -643,10 +643,9 @@ export function App({ session }: AppProps) {
                               {entrySummary(entry)}
                               {entry.code ? <span className="code"> {entry.code}</span> : null}
                               {entry.detail ? (
-                                <details className="log-detail">
-                                  <summary>details</summary>
+                                <Disclosure className="log-detail" summary="details">
                                   <pre>{JSON.stringify(entry.detail, null, 2)}</pre>
-                                </details>
+                                </Disclosure>
                               ) : null}
                             </td>
                           </tr>
@@ -658,7 +657,7 @@ export function App({ session }: AppProps) {
               </div>
             </section>
           </div>
-        </details>
+        </Disclosure>
 
         <footer className="footer">
           <p>
