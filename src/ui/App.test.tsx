@@ -219,10 +219,7 @@ describe('App read lifecycle', () => {
     expect(html).toContain(
       'An update was interrupted; the cashier state is unknown. Read the cashier completely before writing again.',
     );
-    expect(html).toContain('Writes and write tests stay blocked');
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Update cashier<\/button>/);
-    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Run test<\/button>/);
   });
 
   it('disables the competing keys while a full update is writing', () => {
@@ -233,7 +230,6 @@ describe('App read lifecycle', () => {
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Disconnect<\/button>/);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Clear<\/button>/);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Copy text<\/button>/);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
     expect(html).toContain('class="state state-updating"');
   });
 
@@ -244,11 +240,10 @@ describe('App read lifecycle', () => {
 
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Disconnect<\/button>/);
     expect(html).toMatch(/<button[^>]*disabled[^>]*>Clear<\/button>/);
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Writing…<\/button>/);
     expect(html).toContain('class="state state-writing"');
   });
 
-  it('blocks write tests after a write test restore failure until a complete read', () => {
+  it('shows UPDATE INTERRUPTED after a write-test restore failure', () => {
     const html = renderToStaticMarkup(
       <App
         session={sessionFor({
@@ -266,15 +261,12 @@ describe('App read lifecycle', () => {
     );
 
     expect(html).toContain('UPDATE INTERRUPTED');
-    expect(html).toContain(
-      'Writes and write tests stay blocked until a complete read clears the interrupted write.',
-    );
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
-    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Run test<\/button>/);
+    expect(html).toContain('A write did not verify; the cashier state is unknown.');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
     expect(html).toContain('A previous write was interrupted; read the cashier completely');
   });
 
-  it('blocks write tests after a restore-failed update until a complete read', () => {
+  it('shows UPDATE INTERRUPTED after a restore-failed update', () => {
     const html = renderToStaticMarkup(
       <App
         session={sessionFor({
@@ -291,10 +283,7 @@ describe('App read lifecycle', () => {
     );
 
     expect(html).toContain('UPDATE INTERRUPTED');
-    expect(html).toContain(
-      'Writes and write tests stay blocked until a complete read clears the interrupted write.',
-    );
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Test USD rate<\/button>/);
-    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Run test<\/button>/);
+    expect(html).toContain('A write did not verify; the cashier state is unknown.');
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
   });
 });

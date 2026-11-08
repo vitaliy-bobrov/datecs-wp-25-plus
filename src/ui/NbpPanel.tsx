@@ -41,9 +41,22 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
       </div>
 
       {state.status === 'loading' && !data ? (
-        <p className="empty" aria-live="polite">
-          Loading NBP table A…
-        </p>
+        <div className="panel-body nbp-body" aria-busy="true">
+          <p className="hint" role="status">
+            Loading NBP table A…
+          </p>
+          <p className="skeleton skeleton-meta" aria-hidden="true" />
+          <div className="rates" aria-hidden="true">
+            {(['USD', 'EUR'] as const).map((code) => (
+              <div key={code}>
+                <span className="skeleton-label">{code}</span>
+                <span className="skeleton skeleton-rate" />
+                <span className="skeleton skeleton-unit" />
+              </div>
+            ))}
+          </div>
+          <p className="skeleton skeleton-source" aria-hidden="true" />
+        </div>
       ) : state.status === 'error' && !data ? (
         <div className="panel-body">
           <div className="nbp-error" role="alert">

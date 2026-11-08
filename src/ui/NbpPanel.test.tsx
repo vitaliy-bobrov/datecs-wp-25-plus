@@ -31,6 +31,14 @@ describe('NbpPanel', () => {
     expect(html).not.toContain('https://api.nbp.pl/');
   });
 
+  it('renders an accessible skeleton for the first load', () => {
+    const html = renderToStaticMarkup(
+      <NbpPanel state={{ status: 'loading' }} onRefresh={() => undefined} />,
+    );
+    expect(html).toContain('Loading NBP table A…');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('skeleton-rate');
+  });
   it('keeps the previous table visible while refreshing', () => {
     const html = renderToStaticMarkup(
       <NbpPanel state={{ status: 'loading', data: snapshot }} onRefresh={() => undefined} />,

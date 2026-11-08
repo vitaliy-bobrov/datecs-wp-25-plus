@@ -487,6 +487,43 @@ summary:focus-visible,
   border-color: color-mix(in srgb, var(--signal-amber) 36%, var(--border));
 }
 
+.skeleton {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+}
+
+.skeleton-meta {
+  width: 72%;
+  height: 14px;
+}
+
+.skeleton-label {
+  color: var(--ink-secondary);
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.skeleton-rate {
+  width: 76%;
+  min-width: 72px;
+  height: 20px;
+}
+
+.skeleton-unit {
+  grid-column: 1 / -1;
+  width: 48%;
+  height: 14px;
+}
+
+.skeleton-source {
+  width: 88%;
+  height: 30px;
+}
+
 .state-note {
   color: var(--ink-muted);
   font-family: var(--font-mono);

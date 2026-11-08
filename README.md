@@ -33,9 +33,9 @@ Hardware:
 1. Choose **Connect cashier** and select the device. The preflight, foreign reads and converter read run automatically.
 2. If the read fails, use **Read again**.
 3. Download the JSONL and/or text log.
-4. Confirm the read records. No update or single-field write is automatic; both require explicit confirmation, and the update dialog also requires physical-cashier identity confirmation.
+4. Confirm the read records. No update is automatic; it requires explicit confirmation and physical-cashier identity confirmation in the dialog.
 
-During an update or write test the console disables competing keys and asks the browser to confirm leaving the page. It writes a small versioned marker before the first mutating frame. If the page is reloaded during that window, the next load shows **UPDATE INTERRUPTED**, keeps reads available, and blocks every write until a complete read succeeds; the in-memory backup is gone after reload, so the marker never retries the write. A restore that cannot be verified keeps the marker through the same-session FAILED state.
+During an update the console disables competing keys and asks the browser to confirm leaving the page. It writes a small versioned marker before the first mutating frame. If the page is reloaded during that window, the next load shows **UPDATE INTERRUPTED**, keeps reads available, and blocks every write until a complete read succeeds; the in-memory backup is gone after reload, so the marker never retries the write. A restore that cannot be verified keeps the marker through the same-session FAILED state.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -67,8 +67,8 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 - `src/adapters` — Web Serial and NBP HTTP adapters; the simulator adapter is retained for tests only
 - `src/domain` — capture log, NBP selection/staleness, rate normalization and update preview
 - `src/ports` — transport, clock, lock and error contracts
-- `src/protocol` — preflight, local/foreign/converter reads and the single-field write frames used by the rate and print-flag tests
-- `src/session` — connection, lock, read sequences, comparison state and the guarded write test
+- `src/protocol` — preflight, local/foreign/converter reads and the legacy single-field write frames retained for protocol tests
+- `src/session` — connection, lock, read sequences, comparison state and the guarded full update
 - `src/ui` — one-page operator UI
 
 **NBP** means Narodowy Bank Polski. **I90 Type2** is the short ASCII handshake response observed from the WP-25 Plus. The **short preflight** means the `002: 004:` request, not the response `short` candidate mode.

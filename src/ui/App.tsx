@@ -16,30 +16,6 @@ import { RateComparison } from './RateComparison';
 import { UpdatePreview } from './UpdatePreview';
 import { installUnloadGuard } from './unload-guard';
 
-type WriteTarget = 'usd' | 'eur' | 'converter' | 'print';
-
-function nextRate(value: string): string {
-  const last = value.at(-1) ?? '0';
-  const next = last === '9' ? '8' : String(Number(last) + 1);
-  return `${value.slice(0, -1)}${next}`;
-}
-
-function formatTargetValue(target: WriteTarget | null, value: string | undefined): string {
-  return target === 'print' ? formatFlag(value) : formatTestRate(value);
-}
-
-function formatFieldValue(field: string, value: string | undefined): string {
-  return field === 'converterPrint' ? formatFlag(value) : formatTestRate(value);
-}
-
-function writeTargetLabel(target: WriteTarget | null): string {
-  if (target === 'usd') return 'USD slot 0 rate';
-  if (target === 'eur') return 'EUR slot 1 rate';
-  if (target === 'converter') return 'converter rate';
-  if (target === 'print') return 'print converter flag';
-  return 'rate';
-}
-
 function writeFieldLabel(field: string): string {
   if (field === 'slot0Rate') return 'USD slot 0 rate';
   if (field === 'slot1Rate') return 'EUR slot 1 rate';
@@ -158,8 +134,6 @@ export function App({ session }: AppProps) {
   );
   const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [clearOpen, setClearOpen] = useState(false);
-  const [writeOpen, setWriteOpen] = useState(false);
-  const [writeTarget, setWriteTarget] = useState<WriteTarget | null>(null);
   const [updateOpen, setUpdateOpen] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<UpdateTargets | null>(null);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
@@ -286,6 +260,35 @@ export function App({ session }: AppProps) {
   const displayStateLabel = stateLabel(displayState);
   const interruptionText = interruptedMessage;
 
+  const nbpStale = nbp.data?.stale ?? false;
+  const nbpError = nbp.status === 'error';
+  const nbpLoading = nbp.status === 'loading';
+  const writesBlocked = writeInterrupted;
+  const updateBlocked =
+    writesBlocked ||
+    !readFresh ||
+    nbpStale ||
+    nbpError ||
+    nbpLoading ||
+    snapshot.updateState === 'failed' ||
+    snapshot.updateState === 'updating' ||
+    snapshot.writeTestState === 'writing';
+
+  const requestUpdate = (targets: UpdateTargets) => {
+    if (updateBlocked) return;
+    setIdentityConfirmed(false);
+    setPendingUpdate(targets);
+    setUpdateOpen(true);
+  };
+
+  const confirmUpdate = () => {
+    const targets = pendingUpdate;
+    if (!targets || updateBlocked || !identityConfirmed) return;
+    setUpdateOpen(false);
+    setPendingUpdate(null);
+    void session.runFullUpdate(targets);
+  };
+
   const clearCapture = () => {
     if (!deviceBusy) setClearOpen(true);
   };
@@ -321,68 +324,6 @@ export function App({ session }: AppProps) {
 
   const disconnect = async () => {
     await session.disconnect();
-  };
-
-  const writeRates = {
-    usd: snapshot.foreignRead?.slot0Rate,
-    eur: snapshot.foreignRead?.slot1Rate,
-    converter: snapshot.converterRead?.rate,
-    print: snapshot.converterRead?.printFlag,
-  } satisfies Record<WriteTarget, string | undefined>;
-
-  const nbpStale = nbp.data?.stale ?? false;
-  const nbpError = nbp.status === 'error';
-  const nbpLoading = nbp.status === 'loading';
-  const writesBlocked = writeInterrupted;
-  const updateBlocked =
-    writesBlocked ||
-    !readFresh ||
-    nbpStale ||
-    nbpError ||
-    nbpLoading ||
-    snapshot.updateState === 'failed' ||
-    snapshot.updateState === 'updating' ||
-    snapshot.writeTestState === 'writing';
-
-  const requestUpdate = (targets: UpdateTargets) => {
-    if (updateBlocked) return;
-    setIdentityConfirmed(false);
-    setPendingUpdate(targets);
-    setUpdateOpen(true);
-  };
-
-  const confirmUpdate = () => {
-    const targets = pendingUpdate;
-    if (!targets || updateBlocked || !identityConfirmed) return;
-    setUpdateOpen(false);
-    setPendingUpdate(null);
-    void session.runFullUpdate(targets);
-  };
-
-  const writeOriginal = writeTarget ? writeRates[writeTarget] : undefined;
-  const writeTemporary = writeOriginal
-    ? writeTarget === 'print'
-      ? writeOriginal === '1'
-        ? '0'
-        : '1'
-      : nextRate(writeOriginal)
-    : '';
-
-  const runWriteTest = (target: WriteTarget) => {
-    if (writesBlocked || deviceBusy || !writeRates[target]) return;
-    setWriteTarget(target);
-    setWriteOpen(true);
-  };
-
-  const confirmWriteTest = () => {
-    if (writesBlocked || deviceBusy) return;
-    const target = writeTarget;
-    setWriteOpen(false);
-    setWriteTarget(null);
-    if (target === 'usd') void session.runRateWriteTest(0);
-    if (target === 'eur') void session.runRateWriteTest(1);
-    if (target === 'converter') void session.runConverterRateWriteTest();
-    if (target === 'print') void session.runPrintFlagWriteTest();
   };
 
   const download = (format: 'jsonl' | 'text') => {
@@ -600,124 +541,9 @@ export function App({ session }: AppProps) {
           </div>
         </div>
 
-        <details className="diag" open={writesBlocked || undefined}>
-          <summary>Diagnostics · field tests & logger</summary>
+        <details className="diag">
+          <summary>Diagnostics · logger</summary>
           <div className="diag-body">
-            {snapshot.converterRead ? (
-              <section className="card panel write-test-card" aria-labelledby="write-test-heading">
-                <div className="card-heading panel-head">
-                  <div>
-                    <h2 id="write-test-heading">Rate write tests</h2>
-                    <p className="muted">
-                      One field at a time: temporary +1 raw unit or a flag toggle, readback,
-                      restore, readback. USD, EUR, converter and print-flag tests are separate.
-                    </p>
-                  </div>
-                  <span className={`state state-${stateClass(snapshot.writeTestState)}`}>
-                    <span className="settle" key={snapshot.writeTestState}>
-                      {stateLabel(snapshot.writeTestState)}
-                    </span>
-                  </span>
-                </div>
-                <div className="panel-body foreign-probe write-test">
-                  {writesBlocked ? (
-                    <p className="plan-warnings failure" id="write-test-interrupt-reason">
-                      Writes and write tests stay blocked until a complete read clears the
-                      interrupted write.
-                    </p>
-                  ) : null}
-                  <div className="button-row testgrid">
-                    {(['usd', 'eur', 'converter', 'print'] as const).map((target) => (
-                      <button
-                        key={target}
-                        type="button"
-                        className="button"
-                        onClick={() => runWriteTest(target)}
-                        aria-describedby={writesBlocked ? 'write-test-interrupt-reason' : undefined}
-                        aria-disabled={writesBlocked}
-                        disabled={
-                          !writesBlocked &&
-                          (!snapshot.converterRead ||
-                            snapshot.readState !== 'read' ||
-                            deviceBusy ||
-                            !writeRates[target])
-                        }
-                      >
-                        {snapshot.writeTestState === 'writing'
-                          ? 'Writing…'
-                          : target === 'print'
-                            ? 'Test print flag'
-                            : `Test ${target === 'usd' ? 'USD' : target === 'eur' ? 'EUR' : 'converter'} rate`}
-                      </button>
-                    ))}
-                  </div>
-                  <dl className="read-values test-values">
-                    <div>
-                      <dt>USD slot 0</dt>
-                      <dd>{formatTestRate(writeRates.usd)}</dd>
-                    </div>
-                    <div>
-                      <dt>EUR slot 1</dt>
-                      <dd>{formatTestRate(writeRates.eur)}</dd>
-                    </div>
-                    <div>
-                      <dt>Converter</dt>
-                      <dd>{formatTestRate(writeRates.converter)}</dd>
-                    </div>
-                    <div>
-                      <dt>Print converter</dt>
-                      <dd>{formatFlag(writeRates.print)}</dd>
-                    </div>
-                  </dl>
-                  {snapshot.writeTest && !snapshot.writeTest.restored ? (
-                    <p className="plan-warnings failure">
-                      Restore did not verify. The cashier may still hold{` `}
-                      <code>
-                        {formatFieldValue(snapshot.writeTest.field, snapshot.writeTest.temporary)}
-                      </code>
-                      . Do not run the test again; stop and report the log.
-                    </p>
-                  ) : null}
-                  {snapshot.writeTest ? (
-                    <dl className="read-values">
-                      <div>
-                        <dt>Tested field</dt>
-                        <dd>{writeFieldLabel(snapshot.writeTest.field)}</dd>
-                      </div>
-                      <div>
-                        <dt>Temporary readback</dt>
-                        <dd>
-                          {formatFieldValue(
-                            snapshot.writeTest.field,
-                            snapshot.writeTest.temporaryReadback,
-                          )}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Restored readback</dt>
-                        <dd>
-                          {formatFieldValue(
-                            snapshot.writeTest.field,
-                            snapshot.writeTest.restoredReadback,
-                          )}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Restored</dt>
-                        <dd>{snapshot.writeTest.restored ? 'Yes' : 'No'}</dd>
-                      </div>
-                      {snapshot.writeTest.message ? (
-                        <div>
-                          <dt>Result</dt>
-                          <dd>{snapshot.writeTest.message}</dd>
-                        </div>
-                      ) : null}
-                    </dl>
-                  ) : null}
-                </div>
-              </section>
-            ) : null}
-
             <section className="card panel logger" aria-labelledby="logger-heading">
               <div className="card-heading panel-head">
                 <div>
@@ -915,51 +741,6 @@ export function App({ session }: AppProps) {
         <p>
           This removes the in-memory log, preflight result and last-read cache. The update gate is
           reset; nothing is sent to the cashier.
-        </p>
-      </ConfirmDialog>
-
-      <ConfirmDialog
-        open={writeOpen}
-        title={`Run ${writeTargetLabel(writeTarget)} test?`}
-        confirmLabel="Run test"
-        confirmTone="primary"
-        confirmDisabled={writesBlocked}
-        confirmReason={
-          writeInterrupted
-            ? 'A previous write was interrupted; read the cashier completely before testing.'
-            : undefined
-        }
-        onConfirm={confirmWriteTest}
-        onCancel={() => {
-          setWriteOpen(false);
-          setWriteTarget(null);
-        }}
-      >
-        <p>
-          This temporarily changes one rate by one raw unit, reads it back, restores it, and reads
-          it back again. Use only when the cashier is idle.
-        </p>
-        <dl className="read-values">
-          <div>
-            <dt>Field</dt>
-            <dd>{writeTargetLabel(writeTarget)}</dd>
-          </div>
-          <div>
-            <dt>Current</dt>
-            <dd>{formatTargetValue(writeTarget, writeOriginal)}</dd>
-          </div>
-          <div>
-            <dt>Temporary</dt>
-            <dd>{formatTargetValue(writeTarget, writeTemporary)}</dd>
-          </div>
-          <div>
-            <dt>Restore</dt>
-            <dd>{formatTargetValue(writeTarget, writeOriginal)}</dd>
-          </div>
-        </dl>
-        <p>
-          No name, short-name, Change-after-Z or converter value is touched. If restore fails, the
-          cashier may keep the temporary rate; stop and report the log.
         </p>
       </ConfirmDialog>
     </main>
