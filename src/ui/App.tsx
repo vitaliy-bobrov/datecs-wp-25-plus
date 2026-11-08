@@ -94,7 +94,7 @@ function readErrorMessage(snapshot: SessionSnapshot): string | null {
     return 'The USD/EUR records did not arrive. Retry the read.';
   }
   if (snapshot.foreignReadState === 'read' && snapshot.converterReadState === 'failed') {
-    return 'Read incomplete; no update possible. The converter record did not arrive.';
+    return 'The converter record did not arrive. Update is unavailable; read again.';
   }
   if (snapshot.converterReadState === 'failed') {
     return 'The converter record did not arrive. Retry the read.';
@@ -187,7 +187,7 @@ export function App({ session }: AppProps) {
     snapshot.converterReadState === 'read' &&
     snapshot.foreignRead !== undefined &&
     snapshot.converterRead !== undefined;
-  const readFresh = readComplete;
+  const readFresh = readComplete && snapshot.updateState !== 'failed';
   const refreshing =
     snapshot.captureState === 'capturing' ||
     snapshot.readState === 'reading' ||
@@ -306,7 +306,7 @@ export function App({ session }: AppProps) {
 
   const confirmUpdate = () => {
     const targets = pendingUpdate;
-    if (!targets || updateBlocked || !identityConfirmed) return;
+    if (!targets || updateBlocked || !identityConfirmed || !idleAcknowledged) return;
     setUpdateOpen(false);
     setPendingUpdate(null);
     void session.runFullUpdate(targets);
@@ -328,6 +328,7 @@ export function App({ session }: AppProps) {
   };
 
   const confirmWriteTest = () => {
+    if (!idleAcknowledged) return;
     const target = writeTarget;
     setWriteOpen(false);
     setWriteTarget(null);
@@ -422,6 +423,9 @@ export function App({ session }: AppProps) {
                 </label>
                 <p className="hint" id="idle-gate-hint">
                   Connect and Read stay disabled until you confirm the cashier is idle.
+                  {!idleAcknowledged && snapshot.phase === 'connected' && readFailed
+                    ? ' The confirmation was cleared after the failed read; tick it again to retry.'
+                    : ''}
                 </p>
               </div>
 
@@ -540,6 +544,7 @@ export function App({ session }: AppProps) {
             converter={displayedConverter}
             nbp={nbp}
             readFresh={readFresh}
+            readAt={snapshot.lastRead?.at}
             updateState={snapshot.updateState}
             updateResult={snapshot.updateResult}
             onRequestUpdate={requestUpdate}
@@ -765,8 +770,12 @@ export function App({ session }: AppProps) {
         title="Apply NBP update?"
         confirmLabel="Update cashier"
         confirmTone="primary"
-        confirmDisabled={!identityConfirmed}
-        confirmReason="Confirm this is the cashier at the till to enable Update cashier."
+        confirmDisabled={!identityConfirmed || !idleAcknowledged}
+        confirmReason={
+          !idleAcknowledged
+            ? 'Tick the idle acknowledgement before writing.'
+            : 'Confirm this is the cashier at the till to enable Update cashier.'
+        }
         onConfirm={confirmUpdate}
         onCancel={() => {
           setUpdateOpen(false);
@@ -807,7 +816,21 @@ export function App({ session }: AppProps) {
             </dd>
           </div>
         </dl>
-        <label className="checkline identity-gate">
+        <dl className="read-values">
+          <div>
+            <dt>Transport</dt>
+            <dd>{snapshot.transportKind ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>Device</dt>
+            <dd>{snapshot.info?.label ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>USB IDs</dt>
+            <dd>{formatUsbIds(snapshot.info?.vendorId, snapshot.info?.productId)}</dd>
+          </div>
+        </dl>
+        <label className="checkline">
           <input
             type="checkbox"
             checked={identityConfirmed}
@@ -830,8 +853,8 @@ export function App({ session }: AppProps) {
         onCancel={() => setClearOpen(false)}
       >
         <p>
-          This removes the in-memory log and the preflight result. It does not send anything to the
-          cashier.
+          This removes the in-memory log, preflight result and last-read cache. The update gate is
+          reset; nothing is sent to the cashier.
         </p>
       </ConfirmDialog>
 
@@ -840,6 +863,8 @@ export function App({ session }: AppProps) {
         title={`Run ${writeTargetLabel(writeTarget)} test?`}
         confirmLabel="Run test"
         confirmTone="primary"
+        confirmDisabled={!idleAcknowledged}
+        confirmReason="Tick the idle acknowledgement before writing."
         onConfirm={confirmWriteTest}
         onCancel={() => {
           setWriteOpen(false);

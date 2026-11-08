@@ -30,10 +30,10 @@ The static build uses relative asset paths (`base: './'`), so it works under a p
 
 Hardware:
 
-1. Choose **Connect Web Serial** and select the cashier. The preflight, foreign reads and converter read run automatically.
-2. If the automatic reads fail, use the **Retry reading** action.
+1. Tick **Cashier is idle and no sale is open**, choose **Connect cashier**, select the device, then press **Read cashier**. The preflight, foreign reads and converter read run.
+2. If the read fails, use **Read again** after re-ticking the cleared idle confirmation.
 3. Download the JSONL and/or text log.
-4. Confirm the read records. The local frame set runs automatically only as the proven read bootstrap and its values are not shown. No update or single-field write is automatic; both require explicit confirmation.
+4. Confirm the read records. No update or single-field write is automatic; both require explicit confirmation, and the update dialog also requires physical-cashier identity confirmation.
 
 Web Serial settings: **9600 8N1, no flow control**, known device filter `0xFFF0:0x0100`. The exact preflight is:
 
@@ -75,7 +75,7 @@ GitHub Actions runs on pushes to `main` and on pull requests; deployment is `mai
 
 Web Serial for hardware. Connect automatically runs the short preflight, the two foreign-slot reads (name, full name, four-decimal rate and Change-after-Z flag) and the converter read, then compares them with NBP and shows the previous-business-day NBP USD/EUR reference rates with effective date and stale handling. It sends no `0xFF`; the confirmed full update writes USD, EUR, converter rate and print flag, reads all four back and restores on failure. The connection reuses the last granted port when available; otherwise it opens the browser picker.
 
-The update preview shows the exact four-decimal targets from NBP and exposes **Update cashier** only when there is a difference. The update backs up the four readable fields, prechecks them, writes all four, reads them back and restores on failure.
+The update preview shows the exact four-decimal targets from NBP and exposes **Review update** only for a fresh complete read, a non-stale table, a complete converter record and a real difference. It seeds the print flag from the current device value. **Update cashier** is unavailable until the cashier is confirmed idle and its identity is confirmed in the dialog. The update backs up the four readable fields, prechecks them, writes all four, reads them back and restores on failure.
 
 
 ## Boundary validation

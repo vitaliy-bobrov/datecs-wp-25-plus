@@ -73,4 +73,21 @@ describe('ConfirmDialog', () => {
     expect(html).toContain('class="button danger"');
     expect(html).toContain('Clear');
   });
+
+  it('shows a fallback reason whenever confirm is disabled without copy', () => {
+    const html = renderToStaticMarkup(
+      <ConfirmDialog
+        open={false}
+        title="Test"
+        confirmLabel="Go"
+        confirmTone="primary"
+        confirmDisabled
+        onConfirm={() => undefined}
+        onCancel={() => undefined}
+      >
+        Body
+      </ConfirmDialog>,
+    );
+    expect(html).toContain('Complete the required confirmation to continue.');
+  });
 });

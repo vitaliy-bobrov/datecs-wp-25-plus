@@ -467,22 +467,13 @@ summary:focus-visible,
 .state-writing,
 .state-updating,
 .state-capture-only,
-.state-stale {
-  color: var(--signal-amber);
-  border-color: color-mix(in srgb, var(--signal-amber) 36%, var(--border));
-}
-
 .state-error,
 .state-failed {
   color: var(--danger-text);
   border-color: color-mix(in srgb, var(--danger-text) 36%, var(--border));
 }
 
-.state-last-read {
-  color: var(--ink-secondary);
-  border-color: var(--border);
-}
-
+.state-stale,
 .state-refreshing {
   color: var(--signal-amber);
   border-color: color-mix(in srgb, var(--signal-amber) 36%, var(--border));
@@ -548,8 +539,8 @@ summary:focus-visible,
   text-transform: uppercase;
   cursor: pointer;
   transition:
-    transform var(--motion-key) ease,
-    box-shadow var(--motion-key) ease;
+    transform var(--motion-key) var(--ease-settle),
+    box-shadow var(--motion-key) var(--ease-settle);
 }
 
 .button:hover {
@@ -564,6 +555,7 @@ summary:focus-visible,
 }
 
 .button.primary {
+  --seam-key: inset 0 1px 0 color-mix(in srgb, var(--key-primary-ink) 18%, transparent);
   border-color: var(--key-primary);
   background: var(--key-primary);
   color: var(--key-primary-ink);
@@ -580,6 +572,7 @@ summary:focus-visible,
 }
 
 .button.danger {
+  --seam-key: inset 0 1px 0 color-mix(in srgb, var(--key-danger-ink) 18%, transparent);
   border-color: var(--key-danger-border);
   background: var(--key-danger);
   color: var(--key-danger-ink);
@@ -608,6 +601,11 @@ summary:focus-visible,
 .button:disabled:hover,
 .button[aria-disabled="true"]:hover {
   filter: none;
+}
+
+.button[aria-disabled="true"]:active {
+  transform: none;
+  box-shadow: none;
 }
 
 .button-row {
@@ -697,6 +695,7 @@ summary:focus-visible,
 
 .status-title {
   display: block;
+  margin-bottom: 2px;
   font-weight: 700;
 }
 

@@ -1,6 +1,7 @@
 import type { CurrencyCode } from '../domain/rates';
 import { compareRawRate, differenceTone, formatRateValue, parseRawRate } from '../domain/rates';
 import { formatSignedPercent, formatSignedRate } from './format';
+import { formatTimestamp } from './log-view';
 import type { NbpState } from './NbpPanel';
 
 interface RateComparisonProps {
@@ -23,7 +24,7 @@ function formatReadTime(iso: string | undefined): string {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return formatTimestamp(iso);
 }
 
 export function RateComparison({
@@ -50,9 +51,10 @@ export function RateComparison({
       </span>
     </span>
   ) : !readFresh && hasCashier ? (
-    <span className="state state-last-read">
+    <span className="state">
       <span className="settle" key={`last-read-${readTime}`}>
-        Last read {readTime ? <span className="state-note">{readTime}</span> : null}
+        {readTime ? 'Last read ' : 'Partial read'}
+        {readTime ? <span className="state-note">{readTime}</span> : null}
       </span>
     </span>
   ) : null;
@@ -65,7 +67,9 @@ export function RateComparison({
           <p className="muted">
             Cashier rates use four implied decimals; NBP uses PLN per unit. Read-only comparison.
             {!readFresh && hasCashier
-              ? ' Showing the last complete read; differences are unavailable until the cashier is read again.'
+              ? readTime
+                ? ' Showing the last complete read; differences are unavailable until the cashier is read again.'
+                : ' Showing partial values; differences are unavailable until the cashier is read again.'
               : ''}
           </p>
         </div>

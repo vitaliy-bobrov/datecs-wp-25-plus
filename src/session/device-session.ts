@@ -1333,12 +1333,7 @@ export class DeviceSession {
         updateState: 'verified',
         foreignRead: updatedForeign,
         converterRead: updatedConverter,
-        lastRead: {
-          foreignRead: updatedForeign,
-          converterRead: updatedConverter,
-          at: this.captureTimestamp(),
-        },
-        updateResult: { backups, targets, readbacks, restored: true },
+        updateResult: { backups, targets, readbacks, outcome: 'verified', restored: true },
       });
       this.append({
         kind: 'info',
@@ -1393,7 +1388,14 @@ export class DeviceSession {
       });
       this.set({
         updateState: 'failed',
-        updateResult: { backups, targets, readbacks, restored, message },
+        updateResult: {
+          backups,
+          targets,
+          readbacks,
+          outcome: wrote ? (restored ? 'restored' : 'restore-failed') : 'not-written',
+          restored,
+          message,
+        },
       });
     }
   }

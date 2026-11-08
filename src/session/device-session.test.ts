@@ -19,6 +19,15 @@ class FixedClock {
   }
 }
 
+class SteppingClock {
+  private tick = 0;
+
+  nowIso(): string {
+    this.tick += 1;
+    return `2026-11-06T08:00:${String(this.tick).padStart(2, '0')}.000Z`;
+  }
+}
+
 class FakeLock implements DeviceLock {
   supported = true;
   private held = false;
@@ -550,13 +559,14 @@ describe('DeviceSession', () => {
       backups: { usd: '39251', eur: '43955', converter: '39251', printFlag: '1' },
       targets: { usdRaw: 39321, eurRaw: 43925, converterRaw: 39321, printFlag: '1' },
       restored: true,
+      outcome: 'verified',
     });
     expect(session.getSnapshot().lastRead?.foreignRead).toMatchObject({
-      slot0Rate: '39321',
-      slot1Rate: '43925',
+      slot0Rate: '39251',
+      slot1Rate: '43955',
     });
     expect(session.getSnapshot().lastRead?.converterRead).toMatchObject({
-      rate: '39321',
+      rate: '39251',
       printFlag: '1',
     });
     expect(session.getSnapshot().lastRead?.at).toBe('2026-11-06T08:00:00.000Z');
@@ -610,6 +620,7 @@ describe('DeviceSession', () => {
 
     expect(session.getSnapshot().updateState).toBe('failed');
     expect(session.getSnapshot().updateResult?.restored).toBe(true);
+    expect(session.getSnapshot().updateResult?.outcome).toBe('restored');
     expect(session.getSnapshot().foreignRead?.slot0Rate).toBe('39251');
     expect(session.getSnapshot().converterRead?.rate).toBe('39251');
   });
@@ -639,6 +650,7 @@ describe('DeviceSession', () => {
 
     expect(session.getSnapshot().updateState).toBe('failed');
     expect(session.getSnapshot().updateResult?.restored).toBe(true);
+    expect(session.getSnapshot().updateResult?.outcome).toBe('not-written');
     expect(transport.written).toHaveLength(1 + READ_LOCAL_FRAMES.length + 8 + 3 + 4);
   });
 
@@ -707,6 +719,24 @@ describe('DeviceSession', () => {
     expect(lastRead?.at).toBe('2026-11-06T08:00:00.000Z');
   });
 
+  it('uses the converter completion capture timestamp for the cached read', async () => {
+    const selector = new FakeSelector();
+    const session = new DeviceSession(
+      selector,
+      new CaptureLog(new SteppingClock()),
+      new FakeLock(),
+    );
+    await session.acquireLock();
+    await session.connect();
+    const transport = selector.last;
+    if (!transport) throw new Error('Fake transport was not created.');
+    queueReadFlow(transport);
+    await runReadFlow(session);
+
+    const snapshot = session.getSnapshot();
+    expect(snapshot.lastRead?.at).toBe(snapshot.capture.at(-1)?.ts);
+    expect(snapshot.lastRead?.at).not.toBe(snapshot.capture[0]?.ts);
+  });
   it('replaces the cached read after a successful refresh', async () => {
     const selector = new FakeSelector();
     const session = new DeviceSession(selector, new CaptureLog(new FixedClock()), new FakeLock());

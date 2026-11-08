@@ -41,6 +41,27 @@ describe('RateComparison', () => {
     expect(html).toContain('+0.0030');
   });
 
+  it('labels partial values without pretending they are a complete read', () => {
+    const html = renderToStaticMarkup(
+      <RateComparison nbp={ready} cashier={{ USD: '39251', EUR: '43955' }} readFresh={false} />,
+    );
+    expect(html).toContain('Partial read');
+    expect(html).not.toContain('Last read');
+  });
+
+  it('shows refreshing instead of a stale cache while a read is running', () => {
+    const html = renderToStaticMarkup(
+      <RateComparison
+        nbp={ready}
+        cashier={{ USD: '39251', EUR: '43955' }}
+        readFresh={false}
+        refreshing
+        readAt="2026-11-07T10:15:00.000Z"
+      />,
+    );
+    expect(html).toContain('Refreshing');
+    expect(html).not.toContain('Last read');
+  });
   it('labels the last complete read and withholds differences when the read is not fresh', () => {
     const html = renderToStaticMarkup(
       <RateComparison

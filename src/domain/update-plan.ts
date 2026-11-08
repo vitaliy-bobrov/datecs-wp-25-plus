@@ -163,10 +163,13 @@ export interface UpdateValues {
   printFlag: string;
 }
 
+type UpdateOutcome = 'verified' | 'not-written' | 'restored' | 'restore-failed';
+
 export interface FullUpdateResult {
   backups: UpdateValues;
   targets: UpdateTargets;
   readbacks?: UpdateValues;
+  outcome: UpdateOutcome;
   restored: boolean;
   message?: string;
 }

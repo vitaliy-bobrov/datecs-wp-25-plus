@@ -57,6 +57,7 @@ const noDiffConverter: ConverterSnapshot = { name: 'USD', rate: '39321', printFl
 const restoredResult: FullUpdateResult = {
   backups: { usd: '39251', eur: '43955', converter: '39251', printFlag: '1' },
   targets: { usdRaw: 39321, eurRaw: 43925, converterRaw: 39321, printFlag: '1' },
+  outcome: 'restored',
   restored: true,
 };
 
@@ -77,7 +78,10 @@ function markup(overrides: Partial<PreviewProps> = {}): string {
 }
 
 function render(readFresh: boolean): string {
-  return markup({ readFresh });
+  return markup({
+    readFresh,
+    readAt: readFresh ? undefined : '2026-11-06T08:00:00.000Z',
+  });
 }
 
 describe('UpdatePreview', () => {
@@ -115,9 +119,20 @@ describe('UpdatePreview', () => {
     );
     expect(html).toContain('Complete the foreign reads');
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
-    expect(html).toContain('Cashier records are not current.');
+    expect(html).toContain('Cashier records are incomplete.');
   });
 
+  it('disables Review when the print flag is unavailable', () => {
+    const html = markup({ converter: { ...converter, printFlag: undefined } });
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+    expect(html).toContain('A current rate or print flag is unavailable.');
+  });
+
+  it('disables Review when the converter record is incomplete', () => {
+    const html = markup({ converter: undefined });
+    expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
+    expect(html).toContain('converter record is unavailable');
+  });
   it('seeds the print setting from a current flag of 0 without checking it', () => {
     const html = markup({ converter: { ...converter, printFlag: '0' } });
     expect(html).not.toMatch(/<input[^>]*checked=""/);
@@ -143,6 +158,15 @@ describe('UpdatePreview', () => {
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Review update/);
     expect(html).toContain('The last update failed. Read the cashier again before retrying.');
     expect(html).toContain('Update failed; original records were restored.');
+  });
+
+  it('reports an aborted update as no write, not a restore', () => {
+    const html = markup({
+      updateState: 'failed',
+      updateResult: { ...restoredResult, outcome: 'not-written' },
+    });
+    expect(html).toContain('Update aborted before writing; records are unchanged.');
+    expect(html).not.toContain('original records were restored');
   });
 
   it('disables Review with the no-difference reason', () => {

@@ -21,6 +21,7 @@ interface UpdatePreviewProps {
   converter?: ConverterSnapshot;
   nbp: NbpState;
   readFresh: boolean;
+  readAt?: string;
   updateState: 'idle' | 'updating' | 'verified' | 'failed';
   updateResult?: FullUpdateResult;
   onRequestUpdate: (targets: UpdateTargets) => void;
@@ -31,6 +32,7 @@ export function UpdatePreview({
   converter,
   nbp,
   readFresh,
+  readAt,
   updateState,
   updateResult,
   onRequestUpdate,
@@ -104,8 +106,15 @@ export function UpdatePreview({
       : printCurrent === printTarget
         ? 'No change'
         : `${printCurrent} → ${printTarget}`;
-  const currentLabel = readFresh ? 'Cashier now' : 'Last read';
+  const currentLabel = readFresh ? 'Cashier now' : readAt ? 'Last read' : 'Partial read';
   const staleNbp = nbp.status === 'ready' && nbp.data.stale;
+  const valuesReady =
+    plan !== null &&
+    plan.usd.current !== null &&
+    plan.eur.current !== null &&
+    plan.converter !== undefined &&
+    plan.converter.current !== null &&
+    printReady;
   const reviewGate: { tone: 'stale' | 'failed' | 'unavailable'; message: string } | null =
     !readFresh || !plan
       ? null
@@ -126,20 +135,43 @@ export function UpdatePreview({
                 message:
                   'The converter record is unavailable. Read the cashier again before updating.',
               }
-            : null;
+            : !valuesReady
+              ? {
+                  tone: 'unavailable',
+                  message:
+                    'A current rate or print flag is unavailable. Read the cashier again before updating.',
+                }
+              : null;
   const canReview =
     readFresh &&
     plan?.hasChanges === true &&
     plan.converter !== undefined &&
     printReady &&
+    valuesReady &&
     reviewGate === null &&
     updateState !== 'updating' &&
     onRequestUpdate !== undefined;
+  const resultNotice = updateResult ? (
+    <p
+      className={updateResult.outcome === 'verified' ? 'hint' : 'plan-warnings failure'}
+      role={updateResult.outcome === 'verified' ? undefined : 'alert'}
+    >
+      {updateResult.outcome === 'verified'
+        ? 'Update verified; all four readbacks matched.'
+        : updateResult.outcome === 'not-written'
+          ? 'Update aborted before writing; records are unchanged.'
+          : updateResult.outcome === 'restored'
+            ? 'Update failed; original records were restored.'
+            : 'Update failed and restore did not verify. Stop and send the log.'}
+    </p>
+  ) : null;
+
   const readGate = !readFresh ? (
-    <div className="panel-body update-empty-gate">
-      <p className="hint update-read-gate" id={readGateReasonId}>
-        Cashier records are not current. Read again before updating; the values above are the last
-        complete read.
+    <div className="panel-body">
+      <p className="hint" id={readGateReasonId}>
+        {readAt
+          ? 'Cashier records are not current. Read again before updating; the values above are the last complete read.'
+          : 'Cashier records are incomplete. Read again before updating.'}
       </p>
       <div className="button-row update-actions">
         <button
@@ -297,16 +329,14 @@ export function UpdatePreview({
             </ul>
           ) : null}
 
-          {reviewGate ? null : (
+          {reviewGate || !readFresh ? null : (
             <p
-              className={readFresh && plan.hasChanges ? 'hint' : 'empty'}
+              className={plan.hasChanges ? 'hint' : 'empty'}
               id={!plan.hasChanges ? noDiffReasonId : undefined}
             >
-              {!readFresh
-                ? 'Last complete read loaded. Read again before updating.'
-                : plan.hasChanges
-                  ? 'Changes are ready for the update gate.'
-                  : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
+              {plan.hasChanges
+                ? 'Changes are ready for the update gate.'
+                : 'No changes: USD/EUR, converter rate and print flag already match the target.'}
             </p>
           )}
 
@@ -318,19 +348,16 @@ export function UpdatePreview({
           </p>
 
           {!readFresh ? (
-            <p className="hint update-read-gate" id={readGateReasonId}>
-              Cashier records are not current. Read again before updating; the values above are the
-              last complete read.
+            <p className="hint" id={readGateReasonId}>
+              {readAt
+                ? 'Cashier records are not current. Read again before updating; the values above are the last complete read.'
+                : 'Cashier records are incomplete. Read again before updating.'}
             </p>
           ) : null}
 
           {reviewGate ? (
             <p
-              className={
-                reviewGate.tone === 'stale'
-                  ? 'plan-warnings update-gate'
-                  : 'plan-warnings failure update-gate'
-              }
+              className={reviewGate.tone === 'stale' ? 'plan-warnings' : 'plan-warnings failure'}
               id={reviewGateId}
             >
               {reviewGate.message}
@@ -365,21 +392,9 @@ export function UpdatePreview({
               {updateState === 'updating' ? 'Updating…' : 'Review update'}
             </button>
           </div>
-
-          {updateResult ? (
-            <p
-              className={updateResult.restored ? 'hint' : 'plan-warnings failure'}
-              role={updateResult.restored ? undefined : 'alert'}
-            >
-              {updateState === 'verified'
-                ? 'Update verified; all four readbacks matched.'
-                : updateResult.restored
-                  ? 'Update failed; original records were restored.'
-                  : 'Update failed and restore did not verify.'}
-            </p>
-          ) : null}
         </div>
       )}
+      {resultNotice}
     </section>
   );
 }

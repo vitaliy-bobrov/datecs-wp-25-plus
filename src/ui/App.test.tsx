@@ -15,6 +15,30 @@ const base: SessionSnapshot = {
   capture: [],
 };
 
+const cachedPair = {
+  foreignRead: {
+    slot0Name: 'USD',
+    slot0Rate: '39251',
+    slot1Name: 'EUR',
+    slot1Rate: '43955',
+  },
+  converterRead: { name: 'Konwerter', rate: '39251', printFlag: '1' },
+  at: '2026-11-07T10:15:00.000Z',
+};
+
+const completeRead: SessionSnapshot = {
+  ...base,
+  phase: 'connected',
+  transportKind: 'webserial',
+  captureState: 'captured',
+  readState: 'read',
+  foreignReadState: 'read',
+  converterReadState: 'read',
+  foreignRead: cachedPair.foreignRead,
+  converterRead: cachedPair.converterRead,
+  lastRead: cachedPair,
+};
+
 function sessionFor(snapshot: SessionSnapshot): DeviceSession {
   return {
     subscribe: () => () => undefined,
@@ -56,16 +80,7 @@ describe('App read lifecycle', () => {
           phase: 'connected',
           transportKind: 'webserial',
           captureState: 'failed',
-          lastRead: {
-            foreignRead: {
-              slot0Name: 'USD',
-              slot0Rate: '39251',
-              slot1Name: 'EUR',
-              slot1Rate: '43955',
-            },
-            converterRead: { name: 'Konwerter', rate: '39251', printFlag: '1' },
-            at: '2026-11-07T10:15:00.000Z',
-          },
+          lastRead: cachedPair,
         })}
       />,
     );
@@ -90,21 +105,69 @@ describe('App read lifecycle', () => {
           readState: 'read',
           foreignReadState: 'read',
           converterReadState: 'failed',
+          foreignRead: cachedPair.foreignRead,
+        })}
+      />,
+    );
+
+    expect(html).toContain('Read incomplete');
+    expect(html).toContain('Update is unavailable; read again.');
+    expect(html).toContain('confirmation was cleared after the failed read');
+    expect(html).toContain('3.9251');
+    expect(html).toContain('4.3955');
+    expect(html).toMatch(/<button[^>]*disabled[^>]*>Review update/);
+  });
+
+  it('marks a complete read fresh and shows current records', () => {
+    const html = renderToStaticMarkup(<App session={sessionFor(completeRead)} />);
+
+    expect(html).toContain('Cashier records are current.');
+    expect(html).not.toContain('Last read');
+    expect(html).toContain('3.9251');
+    expect(html).toContain('4.3955');
+  });
+
+  it('prefers the cached complete pair over partial foreign values', () => {
+    const html = renderToStaticMarkup(
+      <App
+        session={sessionFor({
+          ...completeRead,
+          converterReadState: 'failed',
+          converterRead: undefined,
           foreignRead: {
             slot0Name: 'USD',
-            slot0Rate: '39251',
+            slot0Rate: '40000',
             slot1Name: 'EUR',
-            slot1Rate: '43955',
+            slot1Rate: '45000',
           },
         })}
       />,
     );
 
     expect(html).toContain('Read incomplete');
-    expect(html).toContain('Read incomplete; no update possible.');
     expect(html).toContain('3.9251');
-    expect(html).toContain('4.3955');
-    expect(html).toMatch(/<button[^>]*disabled[^>]*>Review update/);
+    expect(html).toContain('last complete read');
+  });
+
+  it('does not call a failed update current even when records were restored', () => {
+    const html = renderToStaticMarkup(
+      <App
+        session={sessionFor({
+          ...completeRead,
+          updateState: 'failed',
+          updateResult: {
+            backups: { usd: '39251', eur: '43955', converter: '39251', printFlag: '1' },
+            targets: { usdRaw: 39321, eurRaw: 43925, converterRaw: 39321, printFlag: '1' },
+            outcome: 'restored',
+            restored: true,
+          },
+        })}
+      />,
+    );
+
+    expect(html).not.toContain('Cashier records are current.');
+    expect(html).toContain('Update failed; original records were restored.');
+    expect(html).toMatch(/Review update/);
   });
 
   it('requires the physical-cashier identity confirmation before the update commit', () => {
@@ -113,7 +176,8 @@ describe('App read lifecycle', () => {
     expect(html).toContain('I confirm this is the cashier at the till');
     expect(html).toContain('The device exposes no distinguishing serial');
     expect(html).toMatch(/<button[^>]*aria-disabled="true"[^>]*>Update cashier<\/button>/);
-    expect(html).toContain('Confirm this is the cashier at the till to enable Update cashier.');
+    expect(html).toContain('Tick the idle acknowledgement before writing.');
+    expect(html).toContain('last-read cache');
   });
 
   it('keeps the register empty when the first read fails', () => {

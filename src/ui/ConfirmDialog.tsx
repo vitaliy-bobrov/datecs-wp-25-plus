@@ -7,9 +7,9 @@ interface ConfirmDialogProps {
   title: string;
   confirmLabel: string;
   confirmTone: ConfirmTone;
-  busy?: boolean;
   confirmDisabled?: boolean;
   confirmReason?: string;
+  busy?: boolean;
   children: ReactNode;
   onConfirm: () => void;
   onCancel: () => void;
@@ -20,9 +20,9 @@ export function ConfirmDialog({
   title,
   confirmLabel,
   confirmTone,
-  busy = false,
   confirmDisabled = false,
   confirmReason,
+  busy = false,
   children,
   onConfirm,
   onCancel,
@@ -32,7 +32,8 @@ export function ConfirmDialog({
   const titleId = useId();
   const reasonId = useId();
   const commitBlocked = busy || confirmDisabled;
-  const reasonVisible = confirmDisabled && confirmReason !== undefined;
+  const reasonText = confirmReason ?? 'Complete the required confirmation to continue.';
+  const reasonVisible = confirmDisabled;
 
   useEffect(() => {
     const dialog = ref.current;
@@ -60,7 +61,7 @@ export function ConfirmDialog({
         <div className="button-row modal-actions">
           {reasonVisible ? (
             <p className="modal-reason" id={reasonId}>
-              {confirmReason}
+              {reasonText}
             </p>
           ) : null}
           <button
