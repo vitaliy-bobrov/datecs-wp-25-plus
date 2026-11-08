@@ -542,6 +542,47 @@ summary:focus-visible,
 
 /* Motion ------------------------------------------------------------------ */
 
+@keyframes nbp-fade {
+  from {
+    opacity: 0.72;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.nbp-value-fade {
+  animation: nbp-fade 140ms var(--ease-settle);
+}
+
+@keyframes refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.refresh-spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: var(--radius-full);
+  animation: refresh-spin 700ms linear infinite;
+}
+
+.nbp-refresh[aria-disabled="true"] {
+  border-color: var(--key-secondary-border);
+  background: var(--key-secondary);
+  color: var(--key-secondary-ink);
+  box-shadow:
+    0 3px 0 var(--key-secondary-border),
+    var(--shadow-key-soft),
+    var(--seam-key);
+  cursor: progress;
+}
+
 @keyframes settle-in {
   from {
     opacity: 0.55;
@@ -1534,7 +1575,12 @@ ul.plan-warnings {
     transition: none;
   }
 
-  .settle {
+  .settle,
+  .nbp-value-fade {
+    animation: none;
+  }
+
+  .refresh-spinner {
     animation: none;
   }
 

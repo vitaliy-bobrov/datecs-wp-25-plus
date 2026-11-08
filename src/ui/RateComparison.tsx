@@ -66,11 +66,6 @@ export function RateComparison({
           <h2 id="comparison-heading">Cashier vs NBP</h2>
           <p className="muted">
             Cashier rates use four implied decimals; NBP uses PLN per unit. Read-only comparison.
-            {nbp.status === 'loading' && nbp.data
-              ? ' Refreshing the NBP reference; showing the previous table.'
-              : nbp.status === 'error'
-                ? ' NBP refresh failed; showing the previous table.'
-                : ''}
             {!readFresh && hasCashier
               ? readTime
                 ? ' Showing the last complete read; differences are unavailable until the cashier is read again.'
@@ -106,9 +101,7 @@ export function RateComparison({
                     </span>
                   </td>
                   <td>
-                    <span className="settle" key={mid ?? 'n/a'}>
-                      {mid ?? 'n/a'}
-                    </span>
+                    <span key={mid ?? 'n/a'}>{mid ?? 'n/a'}</span>
                   </td>
                   <td
                     className={[
@@ -155,9 +148,7 @@ export function RateComparison({
                   </dd>
                   <dt>NBP reference</dt>
                   <dd>
-                    <span className="settle" key={mid ?? 'n/a'}>
-                      {mid ?? 'n/a'}
-                    </span>
+                    <span key={mid ?? 'n/a'}>{mid ?? 'n/a'}</span>
                   </dd>
                   <dt>Difference vs NBP</dt>
                   <dd

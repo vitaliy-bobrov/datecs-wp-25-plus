@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { supportsWebSerial } from '../app/capabilities';
 import { nbpClient } from '../app/nbp-service';
 import type { CaptureEntry } from '../domain/capture-log';
@@ -138,6 +138,10 @@ export function App({ session }: AppProps) {
   const [pendingUpdate, setPendingUpdate] = useState<UpdateTargets | null>(null);
   const [identityConfirmed, setIdentityConfirmed] = useState(false);
   const [nbp, setNbp] = useState<NbpState>({ status: 'loading' });
+  const nbpRef = useRef(nbp);
+  const nbpRequest = useRef(false);
+  const nbpLoadingTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  nbpRef.current = nbp;
   const [interruption, setInterruption] = useState<InterruptionMarker | null>(() =>
     readInterruptionMarker(),
   );
@@ -173,15 +177,30 @@ export function App({ session }: AppProps) {
   }, [updateOpen]);
 
   const loadNbp = useCallback(async () => {
-    setNbp((previous) => ({ status: 'loading', data: previous.data }));
+    if (nbpRequest.current) return;
+    nbpRequest.current = true;
+    const hadData = nbpRef.current.data !== undefined;
+    if (hadData) {
+      nbpLoadingTimer.current = setTimeout(() => {
+        setNbp((previous) => ({ status: 'loading', data: previous.data }));
+      }, 180);
+    } else {
+      setNbp({ status: 'loading' });
+    }
     try {
-      setNbp({ status: 'ready', data: await nbpClient.fetchPreviousRates() });
+      const data = await nbpClient.fetchPreviousRates();
+      clearTimeout(nbpLoadingTimer.current);
+      setNbp({ status: 'ready', data });
     } catch (error) {
+      clearTimeout(nbpLoadingTimer.current);
       setNbp((previous) => ({
         status: 'error',
         message: errorMessage(error),
         data: previous.data,
       }));
+    } finally {
+      nbpLoadingTimer.current = undefined;
+      nbpRequest.current = false;
     }
   }, []);
 

@@ -49,7 +49,6 @@ describe('RateComparison', () => {
         readFresh
       />,
     );
-    expect(html).toContain('Refreshing the NBP reference');
     expect(html).toContain('3.9321');
     expect(html).toContain('−0.0070');
   });

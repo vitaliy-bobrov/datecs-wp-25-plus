@@ -43,7 +43,8 @@ describe('NbpPanel', () => {
     const html = renderToStaticMarkup(
       <NbpPanel state={{ status: 'loading', data: snapshot }} onRefresh={() => undefined} />,
     );
-    expect(html).toContain('Refreshing…');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('refresh-spinner');
     expect(html).toContain('3.9321');
     expect(html).toContain('aria-busy="true"');
   });

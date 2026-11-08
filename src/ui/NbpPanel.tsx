@@ -28,14 +28,24 @@ export function NbpPanel({ state, onRefresh }: NbpPanelProps) {
           ) : null}
           <button
             type="button"
-            className="button"
+            className="button nbp-refresh"
             onClick={() => {
               if (state.status === 'loading') return;
               onRefresh();
             }}
             aria-disabled={state.status === 'loading'}
+            aria-busy={state.status === 'loading'}
           >
-            {state.status === 'loading' ? (state.data ? 'Refreshing…' : 'Loading…') : 'Refresh'}
+            {state.status === 'loading' && !state.data ? (
+              'Loading…'
+            ) : (
+              <>
+                Refresh
+                {state.status === 'loading' ? (
+                  <span className="refresh-spinner" aria-hidden="true" />
+                ) : null}
+              </>
+            )}
           </button>
         </div>
       </div>
